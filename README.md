@@ -61,8 +61,6 @@ JOBS=2 ./run_all.sh transient       # transient re-run of the cases still unconv
 python3 -m unittest discover -s tests   # unit tests of the Python helpers (no OpenFOAM needed)
 ```
 
-Measured on my machine, running the cabinet cases two at a time: the cavity study takes about 27 minutes (66 s, 240 s and 1339 s for the three meshes, one core each); each cabinet case takes 314 to 399 s in the first pass (mean 352 s), so the 20-case sweep is about an hour on 2 cores. The continuation of the 6 non-converged cases takes about 8 minutes in total, one case at a time (69 to 83 s each). The transient re-run of the 4 stubborn cases takes 38 to 68 minutes per case (100 s of flow time), so roughly 2 hours with two at a time. To try a single cabinet case first: `python3 scripts/run_sweep.py --velocities 0.5 --loads 300`.
-
 ## Repository layout
 
 ```
