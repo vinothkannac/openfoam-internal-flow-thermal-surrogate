@@ -1,0 +1,30 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+  Cabinet case, steady buoyantSimpleFoam (OpenFOAM ESI v2606).
+  scripts/run_sweep.py copies this case per parameter set.
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      controlDict;
+}
+
+application     buoyantSimpleFoam;
+
+startFrom       startTime;
+startTime       0;
+stopAt          endTime;
+endTime         8000;           // iteration limit; residualControl may stop earlier
+
+deltaT          1;
+
+writeControl    timeStep;
+writeInterval   250;            // last two write times are compared for convergence
+purgeWrite      3;
+writeFormat     ascii;          // scripts/parse_foam.py reads ASCII fields
+writePrecision  8;
+writeCompression off;
+timeFormat      general;
+timePrecision   6;
+runTimeModifiable true;

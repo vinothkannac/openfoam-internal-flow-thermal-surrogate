@@ -1,0 +1,105 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+  Cabinet case, TRANSIENT buoyantPimpleFoam (OpenFOAM ESI v2606).
+  Used by scripts/run_transient.py for the sweep cases that a steady solver
+  could not converge. Same geometry, properties and boundary conditions.
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      controlDict;
+}
+
+application     buoyantPimpleFoam;
+
+startFrom       startTime;
+startTime       0;
+stopAt          endTime;
+endTime         @ENDTIME@;       // physical seconds, set by run_transient.py
+
+deltaT          0.005;
+adjustTimeStep  yes;
+maxCo           0.8;             // convective Courant number limit
+maxDeltaT       0.05;
+
+writeControl    adjustableRunTime;
+writeInterval   5;               // fields every 5 s of flow time
+purgeWrite      0;
+writeFormat     ascii;
+writePrecision  8;
+writeCompression off;
+timeFormat      general;
+timePrecision   6;
+runTimeModifiable true;
+
+functions
+{
+    // I record the quantities I report at every time step, so I can look at the
+    // fluctuation itself and not only at a few saved snapshots.
+    Tmax_comp1
+    {
+        type            surfaceFieldValue;
+        libs            (fieldFunctionObjects);
+        writeFields     no;
+        log             no;
+        regionType      patch;
+        name            comp1;
+        operation       max;
+        fields          (T);
+        writeControl    timeStep;
+        writeInterval   1;
+    }
+    Tmax_comp2
+    {
+        type            surfaceFieldValue;
+        libs            (fieldFunctionObjects);
+        writeFields     no;
+        log             no;
+        regionType      patch;
+        name            comp2;
+        operation       max;
+        fields          (T);
+        writeControl    timeStep;
+        writeInterval   1;
+    }
+    Tmax_comp3
+    {
+        type            surfaceFieldValue;
+        libs            (fieldFunctionObjects);
+        writeFields     no;
+        log             no;
+        regionType      patch;
+        name            comp3;
+        operation       max;
+        fields          (T);
+        writeControl    timeStep;
+        writeInterval   1;
+    }
+    prgh_inlet
+    {
+        type            surfaceFieldValue;
+        libs            (fieldFunctionObjects);
+        writeFields     no;
+        log             no;
+        regionType      patch;
+        name            inlet;
+        operation       areaAverage;
+        fields          (p_rgh);
+        writeControl    timeStep;
+        writeInterval   1;
+    }
+    prgh_outlet
+    {
+        type            surfaceFieldValue;
+        libs            (fieldFunctionObjects);
+        writeFields     no;
+        log             no;
+        regionType      patch;
+        name            outlet;
+        operation       areaAverage;
+        fields          (p_rgh);
+        writeControl    timeStep;
+        writeInterval   1;
+    }
+}

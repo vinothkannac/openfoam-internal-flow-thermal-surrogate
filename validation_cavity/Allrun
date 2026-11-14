@@ -1,0 +1,13 @@
+#!/bin/sh
+# Single run of the validation cavity with the N given in system/meshParams.
+# I run checkMesh without stopping on its exit code and read the log myself; the solver
+# is the step that must succeed.
+# Needs an OpenFOAM ESI v2606 environment in the shell (source its etc/bashrc first).
+cd "${0%/*}" || exit 1
+
+blockMesh           > log.blockMesh 2>&1 || exit 1
+checkMesh           > log.checkMesh 2>&1
+buoyantSimpleFoam   > log.solver    2>&1 || { echo "solver failed, see log.solver"; exit 1; }
+
+# Nusselt number from the wallHeatFlux function object output
+python3 ../scripts/extract_nusselt.py .

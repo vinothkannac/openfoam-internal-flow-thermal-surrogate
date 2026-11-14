@@ -1,0 +1,13 @@
+#!/bin/sh
+# Build the shared mesh of the cabinet case (Gmsh -> OpenFOAM).
+# I mesh once here and copy the result into every sweep case, because the geometry
+# never changes between cases.
+# Requires: python3 with gmsh (pip install gmsh) and an OpenFOAM environment.
+# Optional: SCALE=1.5 ./Allmesh for a coarser, faster mesh.
+cd "${0%/*}" || exit 1
+
+python3 ../scripts/make_cabinet_mesh.py --out cabinet.msh --scale "${SCALE:-1.0}" || exit 1
+gmshToFoam cabinet.msh                                > log.gmshToFoam 2>&1 || exit 1
+python3 ../scripts/fix_boundary.py constant/polyMesh/boundary || exit 1
+checkMesh                                             > log.checkMesh 2>&1
+tail -n 5 log.checkMesh

@@ -1,0 +1,18 @@
+{
+  "converged_only": true,
+  "n_cases": 16,
+  "n_excluded": 4,
+  "n_train": 12,
+  "n_test": 4,
+  "holdout_R2_dT_max_K": 0.9603700440993795,
+  "holdout_MAE_dT_max_K": 6.395213522939347,
+  "holdout_R2_dp_Pa": 0.6674732955914242,
+  "holdout_MAE_dp_Pa": 0.1212345242089854,
+  "loo_R2_dT_max_K": 0.9977480179014395,
+  "loo_MAE_dT_max_K": 1.5152809313400666,
+  "loo_R2_dp_Pa": 0.9948659692235474,
+  "loo_MAE_dp_Pa": 0.012142561715844317,
+  "cfd_wall_time_s_mean": 375.252,
+  "surrogate_inference_s": 0.0002179597680005827,
+  "speedup": 1721657.1821594012
+}

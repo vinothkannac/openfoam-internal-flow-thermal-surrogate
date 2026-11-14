@@ -1,0 +1,16 @@
+{
+  "_comment": "Single source of truth for Nu post-processing and the Rayleigh check. Must match constant/thermophysicalProperties, 0/T and system/meshParams.",
+  "mu": 1.8e-5,
+  "Cp": 1005.0,
+  "Pr": 0.71,
+  "molWeight": 28.96,
+  "p": 100000.0,
+  "T_hot": 300.5,
+  "T_cold": 299.5,
+  "g": 9.81,
+  "L": 0.10116,
+  "depth": 0.01,
+  "Ra_target": 100000.0,
+  "Nu_ref": 4.519,
+  "Nu_ref_source": "de Vahl Davis (1983), Int. J. Numer. Methods Fluids 3, 249-264, Ra = 1e5, average Nusselt number on the hot wall"
+}

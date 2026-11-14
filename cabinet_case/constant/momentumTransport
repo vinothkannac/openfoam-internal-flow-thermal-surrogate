@@ -1,0 +1,20 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+  RANS, k-omega SST with wall functions (low-Re inlet flow, buoyant plumes).
+  Identical copy in constant/turbulenceProperties for older releases.
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      momentumTransport;
+}
+
+simulationType  RAS;
+
+RAS
+{
+    model           kOmegaSST;
+    turbulence      on;
+    printCoeffs     on;
+}

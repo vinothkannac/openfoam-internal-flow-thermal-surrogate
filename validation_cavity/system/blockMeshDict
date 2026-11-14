@@ -1,0 +1,72 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+  2D differentially heated square cavity, single block, wall-clustered cells.
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      blockMeshDict;
+}
+
+#include "meshParams"
+
+scale 1;
+
+vertices
+(
+    (0 0 0)
+    ($L 0 0)
+    ($L $L 0)
+    (0 $L 0)
+    (0 0 $depth)
+    ($L 0 $depth)
+    ($L $L $depth)
+    (0 $L $depth)
+);
+
+blocks
+(
+    // 50 % of the cells in the first half of the edge with expansion 4 towards
+    // the middle (clustering at both walls), same in y, one cell in z.
+    hex (0 1 2 3 4 5 6 7) ($N $N 1)
+    simpleGrading
+    (
+        ((0.5 0.5 4) (0.5 0.5 0.25))
+        ((0.5 0.5 4) (0.5 0.5 0.25))
+        1
+    )
+);
+
+edges ();
+
+boundary
+(
+    hot
+    {
+        type wall;
+        faces ((0 4 7 3));
+    }
+    cold
+    {
+        type wall;
+        faces ((1 2 6 5));
+    }
+    bottomWall
+    {
+        type wall;
+        faces ((0 1 5 4));
+    }
+    topWall
+    {
+        type wall;
+        faces ((3 7 6 2));
+    }
+    frontAndBack
+    {
+        type empty;
+        faces ((0 3 2 1) (4 5 6 7));
+    }
+);
+
+mergePatchPairs ();

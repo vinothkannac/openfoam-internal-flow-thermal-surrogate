@@ -1,0 +1,6 @@
+#!/bin/sh
+cd "${0%/*}" || exit 1
+rm -rf log.* postProcessing constant/polyMesh processor* runs
+# remove all numeric time directories except 0
+for d in [1-9]* 0.[0-9]*; do [ -d "$d" ] && rm -rf "$d"; done
+exit 0

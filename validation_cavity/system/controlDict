@@ -1,0 +1,42 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+  Steady-state run with buoyantSimpleFoam (OpenFOAM ESI v2606).
+  "Time" is the iteration counter. residualControl in fvSolution stops the run.
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      controlDict;
+}
+
+application     buoyantSimpleFoam;
+
+startFrom       startTime;
+startTime       0;
+stopAt          endTime;
+endTime         40000;          // upper limit; residualControl normally stops earlier
+
+deltaT          1;
+
+writeControl    timeStep;
+writeInterval   500;
+purgeWrite      2;
+writeFormat     ascii;
+writePrecision  8;
+writeCompression off;
+timeFormat      general;
+timePrecision   6;
+runTimeModifiable true;
+
+functions
+{
+    wallHeatFlux1
+    {
+        type            wallHeatFlux;
+        libs            (fieldFunctionObjects);
+        patches         (hot cold);
+        executeControl  writeTime;
+        writeControl    writeTime;
+    }
+}

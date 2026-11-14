@@ -1,0 +1,13 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+  Laminar: Ra = 1e5 is well below the transition (~1e8 and above).
+  Identical copy in constant/turbulenceProperties for older OpenFOAM releases.
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      momentumTransport;
+}
+
+simulationType  laminar;

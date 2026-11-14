@@ -1,0 +1,58 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       volScalarField;
+    object      T;
+}
+
+dimensions      [0 0 0 1 0 0 0];
+
+internalField   uniform 293.15;
+
+boundaryField
+{
+    inlet
+    {
+        type            fixedValue;
+        value           uniform 293.15;
+    }
+    outlet
+    {
+        type            inletOutlet;
+        inletValue      uniform 293.15;
+        value           uniform 293.15;
+    }
+    walls
+    {
+        type            zeroGradient;       // adiabatic cabinet shell
+    }
+    comp1
+    {
+        type            externalWallHeatFluxTemperature;
+        mode            flux;
+        q               uniform @Q1@;       // W/m2 into the air
+        kappaMethod     fluidThermo;
+        value           uniform 293.15;
+    }
+    comp2
+    {
+        type            externalWallHeatFluxTemperature;
+        mode            flux;
+        q               uniform @Q2@;
+        kappaMethod     fluidThermo;
+        value           uniform 293.15;
+    }
+    comp3
+    {
+        type            externalWallHeatFluxTemperature;
+        mode            flux;
+        q               uniform @Q3@;
+        kappaMethod     fluidThermo;
+        value           uniform 293.15;
+    }
+    "(front|back)"
+    {
+        type            empty;
+    }
+}

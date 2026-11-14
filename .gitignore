@@ -1,0 +1,19 @@
+__pycache__/
+*.pyc
+# OpenFOAM run output
+validation_cavity/runs/
+validation_cavity/postProcessing/
+validation_cavity/log.*
+validation_cavity/constant/polyMesh/
+cabinet_case/runs/
+cabinet_case/log.*
+cabinet_case/cabinet.msh
+cabinet_case/constant/polyMesh/
+[1-9]*/
+0.[0-9]*/
+processor*/
+cabinet_case/runs_transient/
+cabinet_case/runs_movie/
+cabinet_case/*.log
+.venv/
+docs/img/transient_cabinet.png

@@ -1,0 +1,14 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+  Mesh parameters, included by blockMeshDict.
+  N is overwritten by scripts/mesh_study.py for the 3-mesh study.
+\*---------------------------------------------------------------------------*/
+
+// Cavity edge length [m]. Chosen so that Ra = 1e5 for air with the
+// properties in constant/thermophysicalProperties (see scripts/check_rayleigh.py)
+L       0.10116;
+
+// Out-of-plane thickness [m] (empty patches, value is irrelevant for the flow)
+depth   0.01;
+
+// Cells per side
+N       64;

@@ -1,0 +1,13 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+  Copy of constant/momentumTransport for OpenFOAM releases that still read
+  turbulenceProperties. Delete whichever file your version does not use.
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      turbulenceProperties;
+}
+
+simulationType  laminar;
