@@ -1,8 +1,8 @@
-# Cabinet cooling: buoyancy-driven CFD, validated, with an ML surrogate
+# Natural convection (Buoyancy-driven) CFD simulation, validated, with an ML surrogate
 
 **OpenFOAM (ESI v2606) · Gmsh · Python · scikit-learn**
 
-> *This project was carried out with AI assistance (Claude Code, Anthropic). The case files, scripts, debugging and write-up were produced in a working session with the assistant; every number and figure below comes from a solver log or a script output in this repository, and can be regenerated with the commands in [Quick start](#quick-start).*
+> *This project was carried out with AI assistance (Claude Code).*
 
 ![Cabinet fields](docs/img/cabinet_fields.png)
 
