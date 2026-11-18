@@ -17,3 +17,4 @@ cabinet_case/runs_movie/
 cabinet_case/*.log
 .venv/
 docs/img/transient_cabinet.png
+CLAUDE.md
