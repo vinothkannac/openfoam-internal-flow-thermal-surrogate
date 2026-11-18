@@ -1,0 +1,31 @@
+{
+  "n_cases": 16,
+  "models": {
+    "mlp": {
+      "loo_R2_dT_max_K": 0.9977480179014395,
+      "loo_MAE_dT_max_K": 1.5152809313400666,
+      "loo_R2_dp_Pa": 0.9948659692235474,
+      "loo_MAE_dp_Pa": 0.012142561715844317
+    },
+    "gaussian_process": {
+      "loo_R2_dT_max_K": 0.9972599720292479,
+      "loo_MAE_dT_max_K": 1.840246882185793,
+      "loo_coverage95_dT_max_K": 0.8125,
+      "loo_mean_halfwidth95_dT_max_K": 3.706430557846613,
+      "loo_R2_dp_Pa": 0.9951319697875212,
+      "loo_MAE_dp_Pa": 0.01288390192490705,
+      "loo_coverage95_dp_Pa": 0.875,
+      "loo_mean_halfwidth95_dp_Pa": 0.02448062009569587
+    },
+    "quadratic_polynomial": {
+      "loo_R2_dT_max_K": 0.9923477494390401,
+      "loo_MAE_dT_max_K": 3.426468452801913,
+      "loo_R2_dp_Pa": 0.9683658657776246,
+      "loo_MAE_dp_Pa": 0.043922498417997335
+    }
+  },
+  "range_check_example": {
+    "query_u0.1_q300_out_of_range": true,
+    "query_u0.5_q300_out_of_range": false
+  }
+}

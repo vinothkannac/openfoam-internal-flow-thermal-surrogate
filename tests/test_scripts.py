@@ -117,5 +117,14 @@ class TestRayleigh(unittest.TestCase):
         self.assertEqual(check_rayleigh.main(str(ROOT / "validation_cavity")), 0)
 
 
+class TestCompareSurrogates(unittest.TestCase):
+    def test_out_of_range_flag(self):
+        import numpy as np
+        import compare_surrogates as cs
+        x = np.array([[0.2, 100.0], [1.0, 600.0]])
+        flags = cs.out_of_range([[0.1, 300], [0.5, 300], [0.5, 700]], x)
+        self.assertEqual(list(flags), [True, False, True])
+
+
 if __name__ == "__main__":
     unittest.main()
