@@ -126,5 +126,29 @@ class TestCompareSurrogates(unittest.TestCase):
         self.assertEqual(list(flags), [True, False, True])
 
 
+class TestMonitorDrift(unittest.TestCase):
+    def test_spread_over_window(self):
+        import tempfile
+        from pathlib import Path
+        import parse_foam as pf
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp) / "postProcessing"
+            def write(obj, vals):
+                d = base / obj / "0"
+                d.mkdir(parents=True)
+                (d / "surfaceFieldValue.dat").write_text(
+                    "# header\n# Time\tvalue\n" + "".join(f"{i+1}\t{v}\n" for i, v in enumerate(vals)))
+            write("maxT_comp1", [300, 310, 320, 321, 320.5])
+            write("maxT_comp2", [300] * 5)
+            write("maxT_comp3", [300] * 5)
+            write("pInlet", [10, 10, 10, 10, 10.4])
+            write("pOutlet", [9, 9, 9, 9, 9])
+            r = pf.monitor_drift(tmp, window=3)
+            self.assertEqual(r["window_iterations"], 3)
+            self.assertAlmostEqual(r["T_max_spread_K"], 1.0)
+            self.assertAlmostEqual(r["dp_spread_Pa"], 0.4)
+            self.assertIsNone(pf.monitor_drift(Path(tmp) / "nothing"))
+
+
 if __name__ == "__main__":
     unittest.main()

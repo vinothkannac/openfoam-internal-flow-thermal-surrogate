@@ -99,3 +99,43 @@ def case_metrics(case_dir, log_name="log.solver", conv_tol=0.05):
         "converged": converged,
         "wall_time_s": run_time(case / log_name) if (case / log_name).exists() else None,
     }
+
+
+def _series(case_dir, obj, fname="surfaceFieldValue.dat"):
+    """(iteration, value) rows of a function-object .dat file. After a restart OpenFOAM
+    starts a new sub-directory named after the restart time, so I read them in time order
+    and let later rows replace earlier ones with the same iteration."""
+    rows = {}
+    base = Path(case_dir) / "postProcessing" / obj
+    if not base.exists():
+        return []
+    for sub in sorted((d for d in base.iterdir() if d.is_dir()), key=lambda d: float(d.name)):
+        f = sub / fname
+        if not f.exists():
+            continue
+        for line in f.read_text().splitlines():
+            if line.startswith("#") or not line.strip():
+                continue
+            parts = line.split()
+            rows[float(parts[0])] = float(parts[-1])
+    return sorted(rows.items())
+
+
+def monitor_drift(case_dir, window=500):
+    """Drift of the two reported quantities over the last `window` iterations.
+
+    Returns the spread (max minus min) of T_max (maximum over the three components) and of
+    dp = p_rgh(inlet) - p_rgh(outlet), or None when the monitors were not written (cases run
+    before the function objects were added to the controlDict). A small spread over a window
+    of hundreds of iterations is a stronger statement than a change between two write times,
+    because a plume that oscillates can look converged at two chosen instants."""
+    t = [dict(_series(case_dir, f"maxT_comp{i}")) for i in (1, 2, 3)]
+    pin, pout = dict(_series(case_dir, "pInlet")), dict(_series(case_dir, "pOutlet"))
+    its = sorted(set(t[0]) & set(t[1]) & set(t[2]) & set(pin) & set(pout))
+    if not its:
+        return None
+    its = its[-window:]
+    tmax = [max(d[i] for d in t) for i in its]
+    dp = [pin[i] - pout[i] for i in its]
+    return {"window_iterations": len(its), "T_max_spread_K": max(tmax) - min(tmax),
+            "dp_spread_Pa": max(dp) - min(dp)}

@@ -28,3 +28,70 @@ writeCompression off;
 timeFormat      general;
 timePrecision   6;
 runTimeModifiable true;
+
+// I log T_max on the components and the p_rgh drop every iteration, so that the
+// convergence of the numbers I report can be judged over a window of iterations
+// (scripts/parse_foam.py: monitor_drift), not only between two write times.
+functions
+{
+    maxT_comp1
+    {
+        type            surfaceFieldValue;
+        libs            (fieldFunctionObjects);
+        operation       max;
+        regionType      patch;
+        name            comp1;
+        fields          (T);
+        writeFields     no;
+        writeControl    timeStep;
+        writeInterval   1;
+    }
+    maxT_comp2
+    {
+        type            surfaceFieldValue;
+        libs            (fieldFunctionObjects);
+        operation       max;
+        regionType      patch;
+        name            comp2;
+        fields          (T);
+        writeFields     no;
+        writeControl    timeStep;
+        writeInterval   1;
+    }
+    maxT_comp3
+    {
+        type            surfaceFieldValue;
+        libs            (fieldFunctionObjects);
+        operation       max;
+        regionType      patch;
+        name            comp3;
+        fields          (T);
+        writeFields     no;
+        writeControl    timeStep;
+        writeInterval   1;
+    }
+    pInlet
+    {
+        type            surfaceFieldValue;
+        libs            (fieldFunctionObjects);
+        operation       areaAverage;
+        regionType      patch;
+        name            inlet;
+        fields          (p_rgh);
+        writeFields     no;
+        writeControl    timeStep;
+        writeInterval   1;
+    }
+    pOutlet
+    {
+        type            surfaceFieldValue;
+        libs            (fieldFunctionObjects);
+        operation       areaAverage;
+        regionType      patch;
+        name            outlet;
+        fields          (p_rgh);
+        writeFields     no;
+        writeControl    timeStep;
+        writeInterval   1;
+    }
+}
