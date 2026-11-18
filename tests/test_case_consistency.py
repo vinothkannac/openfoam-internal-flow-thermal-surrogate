@@ -64,7 +64,7 @@ class TestCases(unittest.TestCase):
         for case in ("validation_cavity", "cabinet_case"):
             for n in need:
                 self.assertTrue((ROOT / case / "system" / n).exists(), f"{case}/{n}")
-            for n in ("thermophysicalProperties", "g", "momentumTransport"):
+            for n in ("thermophysicalProperties", "g", "turbulenceProperties"):
                 self.assertTrue((ROOT / case / "constant" / n).exists(), f"{case}/{n}")
 
 

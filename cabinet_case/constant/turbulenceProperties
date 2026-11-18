@@ -1,6 +1,6 @@
 /*--------------------------------*- C++ -*----------------------------------*\
   RANS, k-omega SST with wall functions (low-Re inlet flow, buoyant plumes).
-  Copy of constant/momentumTransport; delete whichever file your release does not use.
+  ESI v2606 reads this file (not momentumTransport, which is the Foundation name).
 \*---------------------------------------------------------------------------*/
 FoamFile
 {
