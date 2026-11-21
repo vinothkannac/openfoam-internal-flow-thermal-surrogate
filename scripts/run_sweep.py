@@ -43,8 +43,10 @@ def case_name(u, q):
 END_TIME = None  # set by --end-time; I use it for short smoke tests and longer convergence tests
 
 
-def prepare(u, q):
-    d = RUNS / case_name(u, q)
+def prepare(u, q, root=None):
+    """Create the case directory (without mesh). `root` lets the study scripts put their cases
+    somewhere other than cabinet_case/runs without touching the sweep results."""
+    d = (Path(root) if root else RUNS) / case_name(u, q)
     if d.exists():
         shutil.rmtree(d)
     d.mkdir(parents=True)
