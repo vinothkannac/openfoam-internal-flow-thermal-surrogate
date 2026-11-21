@@ -18,3 +18,11 @@ cabinet_case/*.log
 .venv/
 docs/img/transient_cabinet.png
 CLAUDE.md
+cabinet_case/mesh_study/
+cabinet_case/runs_meshstudy/
+cabinet_case/runs_linupwind/
+cabinet_case/runs_tsens/
+cabinet_case/runs_active/
+cabinet_case/runs_linupwind*/
+cabinet_case/runs_inlet_turb/
+cabinet_case/runs_transient_active/
