@@ -1,0 +1,9 @@
+round,case,u_in,q_ref,T_max_K,dp_Pa,converged,accepted,end_time_s,wall_time_s,status
+1,u0.225_q150,0.225,150.0,342.21413,0.1872000000148546,False,False,10000.0,604.38,not converged (unsteady)
+2,u0.2_q275,0.2,275.0,383.6787,0.2927999999956228,False,False,10000.0,940.71,not converged (unsteady)
+3,u0.3_q100,0.3,100.0,328.33714,0.1270000000076834,True,True,8000.0,670.98,converged after 8000 iterations
+4,u0.2_q325,0.2,325.0,398.95135,0.3777999999874737,True,True,8000.0,731.03,converged after 8000 iterations
+5,u0.9_q600,0.9,600.0,427.13497,0.8836000000010245,True,True,8000.0,503.52,converged after 8000 iterations
+6,u0.325_q550,0.325,550.0,431.96125,0.4220000000059372,False,False,10000.0,643.58,not converged (unsteady)
+7,u0.35_q500,0.35,500.0,421.18897,0.36899999997694977,False,False,10000.0,704.56,not converged (unsteady)
+8,u0.25_q600,0.25,600.0,465.4343,0.5287999999854947,True,True,10000.0,581.87,converged after continuation to 10000
