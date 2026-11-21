@@ -8,11 +8,12 @@
 
 ## What this project is
 
-Electronics cabinets are cooled by air that moves because it is pushed (a fan) and because it is hot (buoyancy). Predicting the hottest component temperature normally needs a CFD run that takes minutes to hours. This project asks three questions and answers them in order:
+Electronics cabinets are cooled by air that moves because it is pushed (a fan) and because it is hot (buoyancy). Predicting the hottest component temperature normally needs a CFD run that takes minutes to hours. This project asks four questions and answers them in order:
 
 1. **Can I trust my OpenFOAM buoyancy setup?** I test it on a famous benchmark with a known answer: the differentially heated square cavity (de Vahl Davis, 1983).
 2. **How does a cabinet respond to airflow and heat load?** I build a parametric 2D cabinet with three heat-emitting components and run 20 steady simulations over a grid of inlet velocities and heat loads (and re-run the four that turn out to be unsteady with a transient solver).
-3. **Can a small model replace the CFD?** I train a small neural network (a *surrogate*) on the 16 converged results to predict the maximum component temperature and the pressure drop instantly.
+3. **How far can I trust the numbers?** I check the cabinet with a mesh study, a second-order-scheme restart, a transient sensitivity test and an active-learning round (all in Part 2). The honest answer is in the table below: the trends are solid, the absolute temperatures are not mesh-converged.
+4. **Can a small model replace the CFD?** I train a small neural network (a *surrogate*) on the 16 converged results to predict the maximum component temperature and the pressure drop instantly.
 
 It carries over the workflow of my Master's thesis (parametrised CFD cases, correlation of results, validation) to an open-source toolchain that runs on a laptop.
 
@@ -23,6 +24,8 @@ It carries over the workflow of my Master's thesis (parametrised CFD cases, corr
 | **Validation** | Hot-wall Nusselt number 4.524 on the finest mesh vs 4.519 in the benchmark: **+0.11 %**. Hot/cold heat balance below 0.001 %. |
 | **Mesh convergence** | Error 0.44 % → 0.19 % → 0.11 % over three meshes; GCI(fine) = 0.04 %. |
 | **Cabinet sweep** | 20 cases, **16 meet my steady convergence criterion, 4 do not**. Those 4 are unsteady (low velocity, buoyancy-dominated): I re-ran them transient, and their time-averaged T_max is 8 to 47 K higher than the steady value. T_max of the 16 converged cases: 315 K to 478 K, pressure drop 0.15 Pa to 1.09 Pa. |
+| **Cabinet mesh study** | Not mesh-converged: T_max rise is 10 to 14 % higher on a 2× finer mesh (4 cases, apparent order below 1, GCI 30 to 48 %). |
+| **Second-order scheme** | `linearUpwind` raises T_max by 10 to 72 K and the steady solution stops being steady; the steady `upwind` values are biased low. |
 | **Surrogate** | Trained on the 16 converged cases only. Leave-one-out R² = 0.998 (temperature rise) and 0.995 (pressure drop). About 10⁶ times faster than one CFD run. |
 
 The honest caveats are in [Limitations](#limitations); please read them before using any number.
@@ -33,6 +36,7 @@ The honest caveats are in [Limitations](#limitations); please read them before u
 - [Repository layout](#repository-layout)
 - [Part 1: validation on the heated cavity](#part-1-validation-on-the-heated-cavity)
 - [Part 2: the cabinet and its parameter sweep](#part-2-the-cabinet-and-its-parameter-sweep)
+- [Mesh study, second-order scheme, transient sensitivity, active learning](#mesh-study-for-the-cabinet) (in Part 2)
 - [Part 3: the surrogate model](#part-3-the-surrogate-model)
 - [Decisions and what I changed](#decisions-and-what-i-changed)
 - [Assumptions and simplifications](#assumptions-and-simplifications)
@@ -57,6 +61,7 @@ JOBS=2 ./run_all.sh cabinet         # mesh + 20 cases         -> results/sweep_r
 python3 scripts/continue_unconverged.py   # continue the unconverged cases with lower relaxation and 2000 more iterations
 JOBS=2 ./run_all.sh transient       # transient re-run of the cases still unconverged + animation + recirculation check
 ./run_all.sh ml                     # surrogate + summary     -> results/RESULTS.md
+JOBS=4 ./run_all.sh studies         # cabinet mesh study, linearUpwind restart, transient sensitivity, active learning (several hours; needs the converged cases in cabinet_case/runs for the restart test)
 
 python3 -m unittest discover -s tests   # unit tests of the Python helpers (no OpenFOAM needed)
 ```
@@ -72,6 +77,10 @@ cabinet_case/          OpenFOAM template for the cabinet
   Allmesh, Allclean    Gmsh -> gmshToFoam -> patch types -> checkMesh
 run_all.sh             entry point: smoke | cavity | cabinet | transient | ml | all
 scripts/
+  cabinet_mesh_study.py   3-mesh study of 4 cabinet cases + GCI
+  linear_upwind_study.py  restart converged cases with linearUpwind (+ upwind control)
+  transient_sensitivity.py time step / run length sensitivity of one transient case
+  active_learning.py      GP-uncertainty-driven choice of new CFD cases
   check_env.sh         preflight: OpenFOAM environment, tools, Python packages
   check_rayleigh.py    verifies that the cavity really has Ra = 1e5
   mesh_study.py        3-mesh study: Nu, error vs benchmark, GCI
@@ -194,7 +203,7 @@ What this shows:
 
 - **The flow really is unsteady.** T_max fluctuates with a standard deviation of 1.8 to 8.4 K, and the fluctuation grows with heat load and velocity in this set. A steady solver has no fixed point to reach, which explains the stalled residuals.
 - **The steady values were not just noisy, they were biased low.** The transient mean T_max is 8 to 47 K higher than the last steady iterate, and the mean pressure drop is 0.03 to 0.09 Pa lower. The steady numbers for these four cases in `results/sweep_results.csv` should therefore not be used.
-- **The averages are stationary** (the mean changes by 0.01 to 0.11 K between the last two quarters of the averaging window), so the transient means are well-defined values. I have **not** used them for the surrogate, and I have not tested sensitivity to the time step, the 100 s length, or the convection scheme (the transient runs use `linearUpwind` for U and `limitedLinear` for h, not the `upwind` of the steady sweep, so the two sets are not like-for-like).
+- **The averages are stationary** (the mean changes by 0.01 to 0.11 K between the last two quarters of the averaging window), so the transient means are well-defined values. I have **not** used them for the surrogate. Sensitivity to the time step and the 100 s length was tested for one case only (see [Transient sensitivity](#transient-sensitivity-one-case)); the convection scheme was not varied (the transient runs use `linearUpwind` for U and `limitedLinear` for h, not the `upwind` of the steady sweep, so the two sets are not like-for-like).
 
 ![Transient cabinet flow](docs/img/transient_cabinet.gif)
 
@@ -215,6 +224,80 @@ I expected that low inlet velocity would give more recirculation, so I checked (
 | 1.0 | 30.0 % |
 
 **Recirculation is present at every velocity: roughly a quarter to a third of the cabinet cells have reverse vertical flow, and that share is not larger at low velocity.** The strength of the reverse flow scales with the inlet velocity (the strongest downward velocity is about 0.6 × u_in at 1 m/s). So with this indicator the data do not show that low velocity gives *more* separation. What does change at low velocity is that the flow becomes unsteady. At 0.2 to 0.35 m/s the buoyant plume off the hot components is strong relative to the forced flow, the separated regions oscillate instead of staying fixed, and a steady solver cannot converge. The indicator is simple (it also counts ordinary downflow near walls), so I would treat it as supporting evidence, not as a separation analysis.
+
+### Mesh study for the cabinet
+
+The cavity had a three-mesh study; the cabinet did not. `scripts/cabinet_mesh_study.py` meshes the same geometry at three sizes (10 452, 22 636 and 45 916 cells, from `make_cabinet_mesh.py --scale 1.5 / 1.0 / 0.7`) and runs four cases that met the convergence flag in the main sweep, each with the unchanged sweep settings (8000 iterations). All 12 runs meet the convergence flag, and the monitored T_max moves by less than 0.04 K over the last 500 iterations, so the differences below are discretisation error, not unfinished iterations. The medium mesh reproduces the sweep values exactly (difference 0.00 K). I applied the GCI procedure of `scripts/gci.py` to the temperature **rise** T_max − 293.15 K (not to T_max in kelvin, which would hide the error in a large number) with h = N_cells^(−1/2).
+
+| Case | Rise, coarse / medium / fine (K) | Medium → fine | Apparent order p | GCI(fine) |
+|---|---|---|---|---|
+| `u0.35_q200` | 55.1 / 61.8 / 70.6 | +14.3 % | 1.11 | 32 % |
+| `u0.5_q400` | 95.8 / 106.6 / 119.3 | +11.9 % | 0.76 | 43 % |
+| `u1_q100` | 21.6 / 21.9 / 24.8 | +13.2 % | 7.0 (not asymptotic) | not valid |
+| `u1_q600` | 116.7 / 128.7 / 142.4 | +10.6 % | 0.63 | 48 % |
+
+Pressure drop changes by 4 to 7 % from medium to fine (`u0.5_q400`: 0.329 → 0.315 Pa, p = 0.77, GCI 18 %; `u1_q100`: p = 2.9, GCI 3.9 %; `u1_q600`: p = 2.1, GCI 7.9 %; `u0.35_q200` is not asymptotic). Data: `results/cabinet_mesh_study.csv`, `results/cabinet_gci.json`.
+
+**Result: the cabinet T_max is not mesh-converged.** It keeps rising by 10 to 14 % of the rise on every refinement, with an apparent order below 1, so the three-mesh GCI (30 to 48 %) says the medium-mesh temperature rises are uncertain by tens of percent, and the extrapolated values are not trustworthy either. The trend is monotonic (finer mesh, hotter component), which fits the thin hot layers on the component faces being under-resolved. T_max is a maximum face value, so it is a harsh quantity for a mesh study; the pressure drop is much less sensitive. **All absolute temperatures in this README, and the surrogate trained on them, carry this error; the trends with velocity and load are more reliable than the numbers.** I have not tested whether a finer wall-function treatment, prism layers or an integral quantity (mean component temperature) would converge faster.
+
+### Second-order scheme (`linearUpwind`)
+
+The steady sweep uses first-order `upwind` for U and h, and I changed it together with the relaxation factors, so I could not tell which did what. `scripts/linear_upwind_study.py` restarts four cases from their saved converged fields and runs 4000 more iterations two ways from the same state: a **control** with the original `upwind` and a run with `bounded Gauss linearUpwind` for U and h, both at the case's own relaxation factors.
+
+| Case | T_max original (K) | control (`upwind`) | `linearUpwind` | change | dp change | steady? |
+|---|---|---|---|---|---|---|
+| `u1_q100` | 315.1 | 315.1 | 324.9 | +9.8 K | +13.6 % | no |
+| `u0.5_q400` | 399.8 | 399.8 | 434.9 | +35.1 K | +6.4 % | no |
+| `u1_q600` | 421.9 | 421.9 | 483.8 | +61.9 K | +1.8 % | no |
+| `u0.2_q400` | 420.8 | 420.7 | 493.0 | +72.2 K | +4.2 % | no |
+
+The control moves by at most 0.11 K, so the **whole change is the scheme, not the extra iterations or the relaxation**. The second-order runs do not settle: T_max still varies by several kelvin between saves at 11 500, 11 750 and 12 000 iterations (for example 456, 445, 435 K for `u0.5_q400`) and the convergence flag is false. Repeating two cases with U and h relaxation 0.08 for 6000 iterations gave the same picture (`u1_q100` +10.4 K, `u0.5_q400` +51.7 K, still not steady), so I read this as a flow that is physically unsteady once the numerical diffusion of `upwind` is removed, not as a solver that needs more care. This is consistent with the mesh study: the first-order steady results are smeared. **The steady `upwind` temperatures in the sweep are therefore biased low, by 10 to 70 K in these four cases, and the "converged" label only means the diffusive scheme found a fixed point.** I did not time-average the `linearUpwind` runs, so I cannot give a corrected T_max. Data: `results/linear_upwind_study.csv`, `results/linear_upwind_study_relax0.08.csv`.
+
+### Transient sensitivity (one case)
+
+I repeated the cheapest unsteady case, `u0.2_q100`, from one saved steady state with `scripts/transient_sensitivity.py`: the README setting (maxCo 0.8, 100 s), half and double the time step (maxCo 0.4 and 1.6, 100 s), and double the run length (200 s). Averages are time averages over the same seconds (series resampled to a uniform grid); the error is a rough batch-means standard error.
+
+| Run | mean time step | T_max mean (K), 50 to 100 s | std (K) | dp mean (Pa) | wall time |
+|---|---|---|---|---|---|
+| maxCo 0.8, 100 s (as in the table above) | 2.9 ms | 336.41 ± 0.05 | 1.77 | 0.1059 | 69 min |
+| maxCo 0.4, 100 s | 1.5 ms | 336.45 ± 0.05 | 1.79 | 0.1058 | 107 min |
+| maxCo 1.6, 100 s | 5.9 ms | 336.33 ± 0.06 | 1.74 | 0.1063 | 41 min |
+| maxCo 0.8, 200 s | 2.9 ms | 336.43 ± 0.02 (100 to 200 s) | 1.78 | 0.1059 | 110 min |
+
+The 200 s run gives 336.41, 336.46 and 336.41 K in the windows 50 to 100, 100 to 150 and 150 to 200 s. So for this case the time average is insensitive to the time step (spread 0.12 K) and to the run length (0.05 K), and it reproduces the 336.4 K reported above. This supports the averaging procedure, but only for **one** case, the weakest of the four (std 1.8 K); the stronger unsteady cases (std up to 8 K) may need longer windows. It also does not test the convection scheme or the mesh, and the mesh and scheme results above say those matter far more. Data: `results/transient_sensitivity.csv`.
+
+### Active learning
+
+`scripts/active_learning.py` lets the Gaussian process choose new CFD cases: each round fits a GP per target on the cases accepted so far, takes the grid point (u_in step 0.025, q_ref step 25) with the largest predictive standard deviation, runs it with the sweep settings (plus the lower-relaxation continuation if needed), and accepts it into the training set only if it meets the convergence flag. A case that stays unsteady is recorded, and its neighbourhood is excluded from later proposals because the GP cannot learn from it. I allowed 8 CFD runs to collect 4 accepted cases (`results/active_learning_cases.csv`):
+
+| Round | Case | Result |
+|---|---|---|
+| 1 | `u0.225_q150` | unsteady, rejected |
+| 2 | `u0.2_q275` | unsteady, rejected |
+| 3 | `u0.3_q100` | converged, accepted |
+| 4 | `u0.2_q325` | converged, accepted |
+| 5 | `u0.9_q600` | converged, accepted (high-velocity corner: the low-velocity region was blocked by then) |
+| 6 | `u0.325_q550` | unsteady, rejected |
+| 7 | `u0.35_q500` | unsteady, rejected |
+| 8 | `u0.25_q600` | converged after continuation, accepted |
+
+Prediction before the case was run, against the CFD result (`results/active_learning_rounds.csv`):
+
+| Accepted case | T_max rise, CFD (K) | GP error (K) | MLP error (K) | GP 95 % half-width (K) | dp error GP / MLP (Pa) |
+|---|---|---|---|---|---|
+| `u0.3_q100` | 35.2 | +0.24 | +0.37 | 3.3 | +0.003 / +0.002 |
+| `u0.2_q325` | 105.8 | −0.29 | −1.28 | 2.9 | −0.063 / −0.075 |
+| `u0.9_q600` | 134.0 | −1.86 | −1.13 | 2.5 | +0.024 / +0.019 |
+| `u0.25_q600` | 172.3 | +5.32 | +7.23 | 2.7 | −0.028 / −0.008 |
+
+![Active learning](docs/img/active_learning.png)
+
+What this shows:
+
+- **The uncertain region is the unsteady region.** Four of the eight proposals could not be converged even with the continuation, and the uncertainty is highest exactly where the sweep also had unsteady cases. A steady-state surrogate has nothing to learn there; the GP's uncertainty cannot tell a hard-to-predict point from a point with no steady answer.
+- **The surrogate was already good where steady answers exist.** The T_max rise errors on the first three accepted cases (0.2 to 1.9 K) are inside or near the GP's own 95 % half-width. The worst is `u0.25_q600` (5.3 K GP, 7.2 K MLP, about twice the GP half-width): the corner of lowest velocity and highest load, next to the unsteady region. The pressure drop of `u0.2_q325` was under-predicted by 0.06 to 0.075 Pa (17 to 20 %).
+- **Leave-one-out score of the whole set after each accepted case** (GP, T_max rise MAE): 2.16 K (16 cases), 2.29 K (+1), 1.57 K (+2), 1.65 K (+3), 1.79 K (+4); MLP: 1.52, 1.36, 1.89, 1.47, 2.67 K. So the error did not fall with the added points; the new points sit in harder territory than the original grid. With four points I cannot claim a trend either way.
+- This was one run of one selection rule; I did not run a random-selection baseline, so I cannot say that the GP's choice was better than random. I did **not** retrain the project surrogate on these 4 cases, and the sweep CSV is unchanged.
 
 ## Part 3: the surrogate model
 
@@ -272,6 +355,7 @@ The case files were first written without access to an OpenFOAM installation, so
 | Cabinet `fvSolution` | relaxation of U and h 0.3 → 0.15 | With 3000 iterations and relaxation 0.3, 18 of 20 cases did not converge. |
 | Cabinet `fvSchemes` | `div(phi,U)` and `div(phi,h)` from `linearUpwind` to `upwind` | I changed this together with the relaxation and did not test the two separately. **`upwind` is less accurate (more numerical diffusion) than `linearUpwind`, so cabinet temperatures are somewhat smeared.** |
 | Cabinet `controlDict` | `endTime` 3000 → 8000 | More iterations for the slow cases. |
+| `linearUpwind` restart test (`runs_linupwind/`) | Four converged cases restarted from their fields with `linearUpwind` for U and h, plus an `upwind` control at the same relaxation | Separates the scheme effect from the relaxation effect, which I had changed together. The sweep template itself still uses `upwind`. |
 | Transient re-run of 4 cases (`runs_transient/`) | `buoyantPimpleFoam`, implicit Euler, maxCo 0.8, `linearUpwind` for U, `limitedLinear` for h, 100 s flow time | The steady solver cannot converge an oscillating flow. Same physics; only the solver and schemes differ. |
 | Continuation of 6 cases (per case, run directory only) | relaxation of U and h 0.15 → 0.1, k and ω 0.3 → 0.2, restart from 8000, run to 10000 | For the cases still not converged after the main sweep: 2 of 6 converged, 4 did not (see Part 2). The template in `cabinet_case/system/` keeps the sweep settings. |
 
@@ -295,10 +379,10 @@ Everything below is a modelling choice I made, not a measured fact. The effect c
 | Turbulence | RANS k-ω SST with wall functions, fully turbulent. Inlet k = 1e-3 m²/s² and ω = 4 1/s are fixed values I chose, not derived. | The slot Reynolds number is about 2600 at 0.2 m/s and 13 000 at 1 m/s (computed from the air properties above), so the slow cases are in the transitional range where a fully turbulent model is questionable. The same k gives a turbulence intensity of about 13 % at 0.2 m/s and 2.6 % at 1 m/s, so the inlet turbulence is not the same across the sweep. I did not test the sensitivity to these values. |
 | Wall treatment | Wall functions (`nutkWallFunction`, `omegaWallFunction`, turbulent Prandtl number 0.85) on a mesh without prism layers. | I checked y⁺ with `postProcess -func yPlus` on four cases that span the sweep (`scripts/check_yplus.py`, `results/yplus.csv`). It lies between 0.02 and 9.9 on all walls and components, with patch averages of 1.3 to 4.1, and it goes up with inlet velocity. That is below the 30 to 300 range where the log law applies, so the first cell sits in the viscous sublayer or the buffer layer. `nutkWallFunction` sets the wall eddy viscosity to zero in that region, so the treatment ends up close to a low-Reynolds one and the mesh is not wrong for it. The assumption behind the wall-function heat transfer is not really met, though, and I have not tested how much this changes T_max. |
 | Cavity | Laminar, 2D, one cell thick, adiabatic top and bottom, ΔT = 1 K. | Matches the benchmark conditions except for the compressibility noted above. |
-| Mesh | One Gmsh mesh with 22 636 cells for the whole sweep. The cavity uses three refinement levels. | There is no mesh study for the cabinet, so its discretisation error is unknown. |
-| Numerics | The steady sweep uses first-order `upwind` for U and h. The transient runs use `linearUpwind` for U and `limitedLinear` for h. | Upwind smears temperature; the steady and transient results are not like-for-like. |
+| Mesh | One Gmsh mesh with 22 636 cells for the whole sweep. The cavity uses three refinement levels. | The cabinet mesh study (above) shows the T_max rise changes by 10 to 14 % between the medium and fine mesh: the sweep temperatures are not mesh-converged. |
+| Numerics | The steady sweep uses first-order `upwind` for U and h. The transient runs use `linearUpwind` for U and `limitedLinear` for h. | Upwind smears temperature; restarting four cases with `linearUpwind` raised T_max by 10 to 72 K and the flow stopped being steady (above). The steady and transient results are not like-for-like. |
 | Convergence | A steady case counts as converged when `T_max` changes by less than 0.05 K between the last two write times, 250 iterations apart. | A loose criterion. One of the 16 accepted cases only just passes it. The case template now also logs T_max on the components and the p_rgh drop at every iteration (function objects in `cabinet_case/system/controlDict`), and `parse_foam.monitor_drift()` gives their spread over the last 500 iterations. The 20 results above were run before I added this, so they have no monitor data, and the criterion is unchanged. |
-| Unsteady cases | The 100 s transient runs start from the last steady fields and average over the second half. | Not tested for sensitivity to time step, run length or start state. |
+| Unsteady cases | The 100 s transient runs start from the last steady fields and average over the second half. | For `u0.2_q100` the time average changes by less than 0.15 K with the time step (maxCo 0.4 to 1.6) and run length (100 to 200 s); not tested for the other three cases or for the start state. |
 | Quantities | `T_max` is the largest temperature among the component face values. `dp` is the average `p_rgh` at the inlet minus the outlet, so the hydrostatic part is excluded. | `T_max` is a face value, not a thermocouple reading. It depends on the wall treatment above. |
 | Surrogate | A small neural network on a 5 × 4 grid of two parameters (16 usable points), trained and tested on my own CFD, not on experiments. | Valid only inside the sampled range, and only as accurate as the CFD that trained it. |
 
@@ -309,11 +393,11 @@ Everything below is a modelling choice I made, not a measured fact. The effect c
 | Limitation | Cause | What I would do next |
 |---|---|---|
 | **2D section of a 3D problem.** Absolute temperatures and pressure drops are not representative of a real cabinet. | Computing budget: a 3D mesh with the same resolution needs far more cells and run time than a two-core laptop handles comfortably. | Build a 3D case and check how much the 2D numbers change. |
-| **No mesh study for the cabinet** (one mesh of 22 636 cells). | Computing budget: three meshes for 20 steady cases plus the transient runs would multiply the run time. The cavity does have a full 3-mesh study and GCI. | Repeat a few representative cases on a coarser and a finer mesh. |
+| **Cabinet not mesh-converged.** A three-mesh study of 4 cases gives T_max rises 10 to 14 % higher on the fine mesh, apparent order below 1, GCI 30 to 48 %. | Computing budget: the sweep was run on one mesh. | Test wall treatment and prism layers, use an integral quantity, and refine further. |
 | **Four of the 20 cabinet cases are unsteady** and cannot be converged with a steady solver. Their steady values are biased low (see the transient table). The surrogate is trained without them, which leaves 16 points. | Physics of the problem, not a budget issue. I resolved it with a transient solver, which is the expensive part. | Longer transient runs and a transient sweep, so the unsteady region is part of the surrogate. |
-| **Transient runs not tested for sensitivity** to time step, run length or convection scheme. They use different schemes from the steady sweep. | Computing budget: each transient case already takes 38 to 68 minutes, and a sensitivity study needs several more runs per case. | Vary the time step and run length for one case and compare the time averages. |
-| **First-order `upwind` in the steady sweep.** Robust but diffusive: temperatures are smeared. | I switched to it for robustness, together with lower relaxation, when the first sweep did not converge. I did not test the two changes separately, so I cannot say how much each helped. | Re-run the converged cases with `linearUpwind` once a good starting field exists. |
-| **Surrogate trained on 16 points of a 2-parameter space:** valid only inside the sampled range, and the hold-out score rests on 4 cases. | Each training point is one CFD run, so the number of points is limited by the same budget. | More points, especially in the low-velocity corner, and a model that also covers the transient cases. |
+| **Transient sensitivity tested on one case only** (`u0.2_q100`: insensitive to time step and run length). The convection scheme and the mesh were not varied, and the transient runs use different schemes from the steady sweep. | Computing budget: each run takes 40 to 110 minutes. | Repeat for the 8 K-std cases and with the mesh study's fine mesh. |
+| **First-order `upwind` in the steady sweep.** Restarting four converged cases with `linearUpwind` raised T_max by 10 to 72 K and the solution stopped being steady, while an `upwind` control moved by 0.1 K. | I switched to `upwind` for robustness, together with lower relaxation. The restart test separates the two: the scheme explains the change. | Time-average second-order runs (transient) for the whole sweep. |
+| **Surrogate trained on 16 points of a 2-parameter space:** valid only inside the sampled range, and the hold-out score rests on 4 cases. | Each training point is one CFD run, so the number of points is limited by the same budget. | Active learning (above) added 4 converged cases but half of its proposals were unsteady; a model that also covers the transient cases is the next step. |
 | **Simplified physics:** prescribed heat flux and no solid conduction, adiabatic shell, no radiation, constant air properties, fully turbulent model (see the table above). | Scope: each addition (conjugate heat transfer, radiation, variable properties) is a larger model that I did not build. | Add conjugate heat transfer and radiation, and test the sensitivity to inlet turbulence. |
 | **Wall functions without prism layers:** I checked y⁺ on 4 of the 20 cases and got 0.02 to 9.9, below the log-law range of 30 to 300 (see Assumptions). | The mesh is sized for the small gaps around the components, which puts the first cell in the sublayer. | Compare T_max on a mesh with a coarser first cell (y⁺ of 30 or more) and on one with prism layers, and check the other 16 cases. |
 | **Convergence criteria:** the hot/cold heat balance (cavity) and the T_max change between write times (cabinet) are the only criteria I applied beyond the residuals. | I wanted a test I can state in one sentence. | The case template now logs T_max and dp every iteration. Next I want to re-run the 4 borderline cases with it and use the spread over the last 500 iterations as a second criterion. |
