@@ -26,6 +26,7 @@ It carries over the workflow of my Master's thesis (parametrised CFD cases, corr
 | **Cabinet sweep** | 20 cases, **16 meet my steady convergence criterion, 4 do not**. Those 4 are unsteady (low velocity, buoyancy-dominated): I re-ran them transient, and their time-averaged T_max is 8 to 47 K higher than the steady value. T_max of the 16 converged cases: 315 K to 478 K, pressure drop 0.15 Pa to 1.09 Pa. |
 | **Cabinet mesh study** | Not mesh-converged: T_max rise is 10 to 14 % higher on a 2× finer mesh (4 cases, apparent order below 1, GCI 30 to 48 %). |
 | **Second-order scheme** | `linearUpwind` raises T_max by 10 to 72 K and the steady solution stops being steady; the steady `upwind` values are biased low. |
+| **Inlet turbulence** | Inlet k changed by 0.1 to 100 times on 3 cases: T_max moves by less than 1 K and dp by at most 5.5 % up to 10 times; only an unrealistic 26 to 52 % intensity moves T_max by 1.4 to 7.2 K. |
 | **Surrogate** | Trained on the 16 converged cases only. Leave-one-out R² = 0.998 (temperature rise) and 0.995 (pressure drop). About 10⁶ times faster than one CFD run. |
 
 The honest caveats are in [Limitations](#limitations); please read them before using any number.
@@ -36,7 +37,7 @@ The honest caveats are in [Limitations](#limitations); please read them before u
 - [Repository layout](#repository-layout)
 - [Part 1: validation on the heated cavity](#part-1-validation-on-the-heated-cavity)
 - [Part 2: the cabinet and its parameter sweep](#part-2-the-cabinet-and-its-parameter-sweep)
-- [Mesh study, second-order scheme, transient sensitivity, active learning](#mesh-study-for-the-cabinet) (in Part 2)
+- [Mesh study, second-order scheme, transient sensitivity, active learning, inlet turbulence](#mesh-study-for-the-cabinet) (in Part 2)
 - [Part 3: the surrogate model](#part-3-the-surrogate-model)
 - [Decisions and what I changed](#decisions-and-what-i-changed)
 - [Assumptions and simplifications](#assumptions-and-simplifications)
@@ -81,6 +82,7 @@ scripts/
   linear_upwind_study.py  restart converged cases with linearUpwind (+ upwind control)
   transient_sensitivity.py time step / run length sensitivity of one transient case
   active_learning.py      GP-uncertainty-driven choice of new CFD cases
+  inlet_turbulence_study.py inlet k x0.1 to x100 on 3 converged cases (T_max, dp vs sweep)
   check_env.sh         preflight: OpenFOAM environment, tools, Python packages
   check_rayleigh.py    verifies that the cavity really has Ra = 1e5
   mesh_study.py        3-mesh study: Nu, error vs benchmark, GCI
@@ -344,6 +346,29 @@ The Gaussian process does not beat the MLP; with 16 points the difference betwee
 
 **Caveats.** The model is valid only inside the sampled range (0.2 to 1.0 m/s, 100 to 600 W/m²) and must not be used to extrapolate. The training set has only 16 points, and one of the 16, `u0.2_q400`, only just passes the convergence test.
 
+### Inlet turbulence
+
+The sweep fixes the inlet at k = 1e-3 m²/s² and ω = 4 1/s for every velocity, so the turbulence intensity falls from about 13 % at 0.2 m/s to 2.6 % at 1 m/s. I had never tested how much the results depend on these values. `scripts/inlet_turbulence_study.py` re-runs three converged cases (`u0.5_q400`, `u1_q100`, `u1_q600`) with the sweep's steady settings and 8000 iterations, with the inlet k multiplied by 0.1, 1, 10 and 100. ω is scaled with √k, so the turbulent length scale stays the same as in the sweep and only the intensity changes. The ×1 run is the control: it reproduces the sweep exactly (0.00 K and 0 % in all three cases). All 12 runs meet my convergence criterion. Differences are against the sweep value:
+
+| Case | k factor | intensity | ΔT_max (K) | Δdp (%) |
+|---|---|---|---|---|
+| `u0.5_q400` | 0.1 | 1.6 % | +0.21 | −0.7 |
+| | 10 | 16 % | −0.91 | +5.5 |
+| | 100 | 52 % | −4.54 | +18.2 |
+| `u1_q100` | 0.1 | 0.8 % | −0.09 | +0.2 |
+| | 10 | 8.2 % | +0.82 | −0.4 |
+| | 100 | 26 % | +1.42 | +5.0 |
+| `u1_q600` | 0.1 | 0.8 % | +0.12 | +0.0 |
+| | 10 | 8.2 % | −0.58 | +0.8 |
+| | 100 | 26 % | −7.22 | +7.2 |
+
+What this shows:
+
+- **Within a factor of 10 of my inlet value, the results are insensitive:** T_max changes by less than 1 K and dp by at most 5.5 %. My choice of k does not drive the sweep results.
+- **At 100 times the inlet k the change is larger** (up to 7.2 K in T_max and 18 % in dp), but that is an intensity of 26 to 52 %, which I consider unrealistic for a cabinet inlet.
+- **The sign of the T_max change differs between cases** at k ×100 (lower for two cases, higher for `u1_q100`). I did not investigate why, so I do not offer an explanation.
+- **Scope:** three cases, steady `upwind` solver. The `linearUpwind` study above shows that this solver biases T_max, so the small sensitivities are statements about the model as I run it, not about the real flow. I did not test the four unsteady cases or the turbulence length scale. Data: `results/inlet_turbulence_study.csv`.
+
 ## Decisions and what I changed
 
 The case files were first written without access to an OpenFOAM installation, so the first runs needed debugging. Only numerics were changed; **no physical setting (geometry, ΔT, properties, boundary conditions) was changed.**
@@ -376,7 +401,7 @@ Everything below is a modelling choice I made, not a measured fact. The effect c
 | Air properties | Ideal gas with constant μ = 1.8e-5 Pa s, Cp = 1005 J/(kg K), Pr = 0.71 (no temperature dependence), pressure 1e5 Pa. | At the hottest component faces (up to about 515 K in the transient runs) the real viscosity and conductivity are larger. |
 | Buoyancy | Weakly compressible ideal gas with density from the equation of state, in both cases (the benchmark itself assumes Boussinesq). Gravity is 9.81 m/s² along −y. | In the cavity, ΔT = 1 K keeps the difference to Boussinesq small. In the cabinet the density change is real but not compared with a Boussinesq run. |
 | Inlet | Uniform velocity `u_in` and uniform temperature 293.15 K. The outlet is at fixed 1e5 Pa and allows reverse flow (`inletOutlet`). | Real inlets have a velocity profile. Air that flows back in through the outlet enters at 293.15 K, which may be cooler than in reality. |
-| Turbulence | RANS k-ω SST with wall functions, fully turbulent. Inlet k = 1e-3 m²/s² and ω = 4 1/s are fixed values I chose, not derived. | The slot Reynolds number is about 2600 at 0.2 m/s and 13 000 at 1 m/s (computed from the air properties above), so the slow cases are in the transitional range where a fully turbulent model is questionable. The same k gives a turbulence intensity of about 13 % at 0.2 m/s and 2.6 % at 1 m/s, so the inlet turbulence is not the same across the sweep. I did not test the sensitivity to these values. |
+| Turbulence | RANS k-ω SST with wall functions, fully turbulent. Inlet k = 1e-3 m²/s² and ω = 4 1/s are fixed values I chose, not derived. | The slot Reynolds number is about 2600 at 0.2 m/s and 13 000 at 1 m/s (computed from the air properties above), so the slow cases are in the transitional range where a fully turbulent model is questionable. The same k gives a turbulence intensity of about 13 % at 0.2 m/s and 2.6 % at 1 m/s, so the inlet turbulence is not the same across the sweep. I tested the sensitivity to k with three cases (see Inlet turbulence in Part 2): below 1 K in T_max for k up to ten times higher or lower, more only at an unrealistic 26 to 52 % intensity. The turbulence length scale and the unsteady cases were not tested. |
 | Wall treatment | Wall functions (`nutkWallFunction`, `omegaWallFunction`, turbulent Prandtl number 0.85) on a mesh without prism layers. | I checked y⁺ with `postProcess -func yPlus` on four cases that span the sweep (`scripts/check_yplus.py`, `results/yplus.csv`). It lies between 0.02 and 9.9 on all walls and components, with patch averages of 1.3 to 4.1, and it goes up with inlet velocity. That is below the 30 to 300 range where the log law applies, so the first cell sits in the viscous sublayer or the buffer layer. `nutkWallFunction` sets the wall eddy viscosity to zero in that region, so the treatment ends up close to a low-Reynolds one and the mesh is not wrong for it. The assumption behind the wall-function heat transfer is not really met, though, and I have not tested how much this changes T_max. |
 | Cavity | Laminar, 2D, one cell thick, adiabatic top and bottom, ΔT = 1 K. | Matches the benchmark conditions except for the compressibility noted above. |
 | Mesh | One Gmsh mesh with 22 636 cells for the whole sweep. The cavity uses three refinement levels. | The cabinet mesh study (above) shows the T_max rise changes by 10 to 14 % between the medium and fine mesh: the sweep temperatures are not mesh-converged. |
@@ -398,7 +423,7 @@ Everything below is a modelling choice I made, not a measured fact. The effect c
 | **Transient sensitivity tested on one case only** (`u0.2_q100`: insensitive to time step and run length). The convection scheme and the mesh were not varied, and the transient runs use different schemes from the steady sweep. | Computing budget: each run takes 40 to 110 minutes. | Repeat for the 8 K-std cases and with the mesh study's fine mesh. |
 | **First-order `upwind` in the steady sweep.** Restarting four converged cases with `linearUpwind` raised T_max by 10 to 72 K and the solution stopped being steady, while an `upwind` control moved by 0.1 K. | I switched to `upwind` for robustness, together with lower relaxation. The restart test separates the two: the scheme explains the change. | Time-average second-order runs (transient) for the whole sweep. |
 | **Surrogate trained on 16 points of a 2-parameter space:** valid only inside the sampled range, and the hold-out score rests on 4 cases. | Each training point is one CFD run, so the number of points is limited by the same budget. | Active learning (above) added 4 converged cases but half of its proposals were unsteady; a model that also covers the transient cases is the next step. |
-| **Simplified physics:** prescribed heat flux and no solid conduction, adiabatic shell, no radiation, constant air properties, fully turbulent model (see the table above). | Scope: each addition (conjugate heat transfer, radiation, variable properties) is a larger model that I did not build. | Add conjugate heat transfer and radiation, and test the sensitivity to inlet turbulence. |
+| **Simplified physics:** prescribed heat flux and no solid conduction, adiabatic shell, no radiation, constant air properties, fully turbulent model (see the table above). | Scope: each addition (conjugate heat transfer, radiation, variable properties) is a larger model that I did not build. | Add conjugate heat transfer and radiation. (The inlet-turbulence sensitivity is now tested, see Part 2.) |
 | **Wall functions without prism layers:** I checked y⁺ on 4 of the 20 cases and got 0.02 to 9.9, below the log-law range of 30 to 300 (see Assumptions). | The mesh is sized for the small gaps around the components, which puts the first cell in the sublayer. | Compare T_max on a mesh with a coarser first cell (y⁺ of 30 or more) and on one with prism layers, and check the other 16 cases. |
 | **Convergence criteria:** the hot/cold heat balance (cavity) and the T_max change between write times (cabinet) are the only criteria I applied beyond the residuals. | I wanted a test I can state in one sentence. | The case template now logs T_max and dp every iteration. Next I want to re-run the 4 borderline cases with it and use the spread over the last 500 iterations as a second criterion. |
 | **Benchmark value** 4.519 was confirmed in a secondary source, not in the original paper. | I checked only a secondary source that tabulates the value. | Check against the 1983 table. |
