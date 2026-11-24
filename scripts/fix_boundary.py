@@ -24,9 +24,12 @@ TYPES = {
     "outlet": "patch",
 }
 
+# For the 3D slice the front and back are real no-slip walls (a cabinet has side panels), not 'empty'.
+TYPES_3D = {**TYPES, "front": "wall", "back": "wall"}
 
-def fix(text):
-    for name, new_type in TYPES.items():
+
+def fix(text, types=TYPES):
+    for name, new_type in types.items():
         pattern = re.compile(r"(\n\s*" + re.escape(name) + r"\s*\{)(.*?)(\})", re.S)
         m = pattern.search(text)
         if not m:
@@ -42,8 +45,9 @@ def fix(text):
 
 if __name__ == "__main__":
     path = sys.argv[1]
+    types = TYPES_3D if "--3d" in sys.argv[2:] else TYPES
     with open(path) as fh:
         original = fh.read()
     with open(path, "w") as fh:
-        fh.write(fix(original))
+        fh.write(fix(original, types))
     print(f"patch types set in {path}")
