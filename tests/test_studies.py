@@ -1,5 +1,6 @@
 """Tests for the pure helpers of the Tier-2 study scripts (no OpenFOAM needed)."""
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -10,6 +11,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import active_learning as al  # noqa: E402
 import cabinet_mesh_study as ms  # noqa: E402
+import inlet_turbulence_study as its  # noqa: E402
 import linear_upwind_study as lu  # noqa: E402
 import transient_sensitivity as tsens  # noqa: E402
 
@@ -99,6 +101,40 @@ class TestActiveLearning(unittest.TestCase):
         pu2, pq2, *_ = al.propose(x, y, blocked=[[pu, pq]])
         d = np.linalg.norm(al.norm([pu, pq]) - al.norm([pu2, pq2]))
         self.assertGreater(d, al.BLOCK_RADIUS)
+
+
+class TestInletTurbulence(unittest.TestCase):
+    def make_case(self, tmp):
+        # a tiny fake 0/ folder with the same "uniform" entries as the real k and omega files
+        (tmp / "0").mkdir()
+        (tmp / "0" / "k").write_text("internalField uniform 1e-3;\ninlet { value uniform 1e-3; }\n")
+        (tmp / "0" / "omega").write_text("internalField uniform 4;\ninlet { value uniform 4; }\n")
+
+    def test_k_scales_and_omega_scales_with_sqrt(self):
+        with tempfile.TemporaryDirectory() as t:
+            d = Path(t)
+            self.make_case(d)
+            its.set_inlet(d, 100.0)
+            self.assertEqual((d / "0" / "k").read_text().count("uniform 0.1;"), 2)
+            self.assertEqual((d / "0" / "omega").read_text().count("uniform 40;"), 2)
+
+    def test_factor_one_keeps_the_values(self):
+        # the text changes from 1e-3 to 0.001, but the number stays the same
+        with tempfile.TemporaryDirectory() as t:
+            d = Path(t)
+            self.make_case(d)
+            its.set_inlet(d, 1.0)
+            self.assertEqual((d / "0" / "k").read_text().count("uniform 0.001;"), 2)
+            self.assertEqual((d / "0" / "omega").read_text().count("uniform 4;"), 2)
+
+    def test_missing_entry_fails(self):
+        with tempfile.TemporaryDirectory() as t:
+            d = Path(t)
+            (d / "0").mkdir()
+            (d / "0" / "k").write_text("internalField uniform 5;\n")
+            (d / "0" / "omega").write_text("internalField uniform 4;\n")
+            with self.assertRaises(RuntimeError):
+                its.set_inlet(d, 10.0)
 
 
 if __name__ == "__main__":
