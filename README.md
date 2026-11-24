@@ -27,6 +27,7 @@ It carries over the workflow of my Master's thesis (parametrised CFD cases, corr
 | **Cabinet mesh study** | Not mesh-converged: T_max rise is 10 to 14 % higher on a 2× finer mesh (4 cases, apparent order below 1, GCI 30 to 48 %). |
 | **Second-order scheme** | `linearUpwind` raises T_max by 10 to 72 K and the steady solution stops being steady; the steady `upwind` values are biased low. |
 | **Inlet turbulence** | Inlet k changed by 0.1 to 100 times on 3 cases: T_max moves by less than 1 K and dp by at most 5.5 % up to 10 times; only an unrealistic 26 to 52 % intensity moves T_max by 1.4 to 7.2 K. |
+| **Radiation** | Adding surface radiation (`fvDOM`, transparent air) lowers T_max by 5 to 64 K on three cases (emissivity 0.9 and 0.3); the components radiate 10 to 31 % of their power to the shell and the openings. The sweep without radiation is biased high. |
 | **Surrogate** | Trained on the 16 converged cases only. Leave-one-out R² = 0.998 (temperature rise) and 0.995 (pressure drop). About 10⁶ times faster than one CFD run. |
 
 The honest caveats are in [Limitations](#limitations); please read them before using any number.
@@ -37,7 +38,7 @@ The honest caveats are in [Limitations](#limitations); please read them before u
 - [Repository layout](#repository-layout)
 - [Part 1: validation on the heated cavity](#part-1-validation-on-the-heated-cavity)
 - [Part 2: the cabinet and its parameter sweep](#part-2-the-cabinet-and-its-parameter-sweep)
-- [Mesh study, second-order scheme, transient sensitivity, active learning, inlet turbulence](#mesh-study-for-the-cabinet) (in Part 2)
+- [Mesh study, second-order scheme, transient sensitivity, active learning, inlet turbulence, radiation](#mesh-study-for-the-cabinet) (in Part 2)
 - [Part 3: the surrogate model](#part-3-the-surrogate-model)
 - [Decisions and what I changed](#decisions-and-what-i-changed)
 - [Assumptions and simplifications](#assumptions-and-simplifications)
@@ -83,6 +84,7 @@ scripts/
   transient_sensitivity.py time step / run length sensitivity of one transient case
   active_learning.py      GP-uncertainty-driven choice of new CFD cases
   inlet_turbulence_study.py inlet k x0.1 to x100 on 3 converged cases (T_max, dp vs sweep)
+  radiation_study.py      fvDOM surface radiation on 3 cases x 2 emissivities + radiative heat balance
   check_env.sh         preflight: OpenFOAM environment, tools, Python packages
   check_rayleigh.py    verifies that the cavity really has Ra = 1e5
   mesh_study.py        3-mesh study: Nu, error vs benchmark, GCI
@@ -369,6 +371,33 @@ What this shows:
 - **The sign of the T_max change differs between cases** at k ×100 (lower for two cases, higher for `u1_q100`). I did not investigate why, so I do not offer an explanation.
 - **Scope:** three cases, steady `upwind` solver. The `linearUpwind` study above shows that this solver biases T_max, so the small sensitivities are statements about the model as I run it, not about the real flow. I did not test the four unsteady cases or the turbulence length scale. Data: `results/inlet_turbulence_study.csv`.
 
+### Radiation
+
+The sweep has no radiation: the components give a fixed heat flux to the air and the shell is adiabatic. `scripts/radiation_study.py` adds the finite-volume discrete ordinates model (`fvDOM`, 12 directions in the 2D plane) of `buoyantSimpleFoam` to the same case and runs the same three cases as in the inlet study (`u0.5_q400`, `u1_q100`, `u1_q600`) with the sweep's steady settings and 8000 iterations. All of the following is my assumption, not data from a real product:
+
+- Air is transparent, so only surfaces exchange radiation.
+- Components and shell have the same emissivity: 0.9 (painted metal) or 0.3 (bare metal).
+- The inlet and outlet openings are black (emissivity 1) and sit at their boundary-condition temperature, so radiation that goes through them is lost.
+- The shell is still adiabatic towards the outside, but it can take up radiation and pass the heat to the air by convection. For that I changed its temperature condition from `zeroGradient` to `externalWallHeatFluxTemperature` with q = 0 and the radiative flux `qr` switched on. The component conditions only got the `qr` line.
+
+The sweep without radiation is the control. All six runs meet my convergence criterion. The radiative heat balance is computed from the final `qr` field (`results/radiation_study.csv`); the radiative exchange summed over all patches is 0.1 to 0.3 % of the heat input, so the exchange is consistent.
+
+| Case | Emissivity | ΔT_max vs sweep (K) | Δdp (%) | Components radiate (% of power) | Shell absorbs (%) | Openings absorb (%) |
+|---|---|---|---|---|---|---|
+| `u0.5_q400` | 0.9 | −55.7 (−52 % of the rise) | +13.5 | 31.1 | 23.4 | 7.4 |
+| | 0.3 | −30.7 (−29 %) | +3.1 | 15.5 | 9.5 | 5.8 |
+| `u1_q100` | 0.9 | −9.9 (−45 %) | +0.8 | 23.7 | 18.7 | 4.7 |
+| | 0.3 | −4.9 (−22 %) | +0.4 | 10.4 | 6.8 | 3.5 |
+| `u1_q600` | 0.9 | −64.1 (−50 %) | +5.2 | 26.1 | 20.6 | 5.3 |
+| | 0.3 | −34.9 (−27 %) | +2.3 | 12.1 | 7.9 | 4.0 |
+
+What this shows:
+
+- **Radiation matters in this model.** T_max is lower by 5 to 64 K, which is 22 to 52 % of the temperature rise above the inlet. The components give 10 to 31 % of their power to the shell and the openings by radiation, and the shell then heats the air, which also changes the flow (pressure drop up to 13.5 %). The steady sweep without radiation is therefore biased high, in the opposite direction to the `upwind` bias found above.
+- **The drop is larger than the radiated share alone suggests.** For `u1_q600` with ε = 0.9, 26 % of the power leaves by radiation but the temperature rise falls by 50 %. I did not separate the causes; I only note that radiative loss grows with T⁴ at the hottest surfaces and that the heated shell changes the buoyant flow.
+- **Between 3.5 and 7.4 % of the power leaves through the open inlet and outlet as radiation.** This depends directly on my assumption that the openings are black at about 293 K. With closed or screened openings it would be less.
+- **Scope:** three cases, a 2D section (in 3D the view factors to the front and back walls would add more exchange), grey diffuse surfaces with one emissivity, transparent air, steady `upwind` solver. The four unsteady cases and the other emissivities were not run, so I cannot say how the effect varies over the sweep or whether a surrogate trained on the sweep should include radiation. Data: `results/radiation_study.csv`.
+
 ## Decisions and what I changed
 
 The case files were first written without access to an OpenFOAM installation, so the first runs needed debugging. Only numerics were changed; **no physical setting (geometry, ΔT, properties, boundary conditions) was changed.**
@@ -397,7 +426,7 @@ Everything below is a modelling choice I made, not a measured fact. The effect c
 | Geometry | The cabinet is a generic 2D section (0.6 m × 1.2 m, three equal rectangles, inlet and outlet slots in line), one cell thick with `empty` front and back. It is not a model of a real product. | Components behave like infinitely long bars; there is no flow in the third direction. Absolute values do not transfer to a real cabinet. |
 | Heat sources | Each component has a uniform, prescribed heat flux (`q1 = q_ref`, `q2 = 0.6 q_ref`, `q3 = 0.3 q_ref`). The 1 : 0.6 : 0.3 split is my choice. | The component surface temperature is a result, not an input. There is no conduction inside the components and no heat spreading, so hot spots are probably sharper than in reality. |
 | Shell | Cabinet walls are adiabatic and no-slip. | No heat is lost through the shell, which overestimates temperatures. |
-| Radiation | Not modelled. | Underestimates heat removal, so temperatures are higher than with radiation. |
+| Radiation | Not modelled in the sweep. I tested it on three cases with `fvDOM` (see Radiation in Part 2). | Underestimates heat removal: with radiation T_max is 5 to 64 K lower in the three cases I tested. The sweep temperatures are therefore upper bounds for the model. |
 | Air properties | Ideal gas with constant μ = 1.8e-5 Pa s, Cp = 1005 J/(kg K), Pr = 0.71 (no temperature dependence), pressure 1e5 Pa. | At the hottest component faces (up to about 515 K in the transient runs) the real viscosity and conductivity are larger. |
 | Buoyancy | Weakly compressible ideal gas with density from the equation of state, in both cases (the benchmark itself assumes Boussinesq). Gravity is 9.81 m/s² along −y. | In the cavity, ΔT = 1 K keeps the difference to Boussinesq small. In the cabinet the density change is real but not compared with a Boussinesq run. |
 | Inlet | Uniform velocity `u_in` and uniform temperature 293.15 K. The outlet is at fixed 1e5 Pa and allows reverse flow (`inletOutlet`). | Real inlets have a velocity profile. Air that flows back in through the outlet enters at 293.15 K, which may be cooler than in reality. |
@@ -423,7 +452,7 @@ Everything below is a modelling choice I made, not a measured fact. The effect c
 | **Transient sensitivity tested on one case only** (`u0.2_q100`: insensitive to time step and run length). The convection scheme and the mesh were not varied, and the transient runs use different schemes from the steady sweep. | Computing budget: each run takes 40 to 110 minutes. | Repeat for the 8 K-std cases and with the mesh study's fine mesh. |
 | **First-order `upwind` in the steady sweep.** Restarting four converged cases with `linearUpwind` raised T_max by 10 to 72 K and the solution stopped being steady, while an `upwind` control moved by 0.1 K. | I switched to `upwind` for robustness, together with lower relaxation. The restart test separates the two: the scheme explains the change. | Time-average second-order runs (transient) for the whole sweep. |
 | **Surrogate trained on 16 points of a 2-parameter space:** valid only inside the sampled range, and the hold-out score rests on 4 cases. | Each training point is one CFD run, so the number of points is limited by the same budget. | Active learning (above) added 4 converged cases but half of its proposals were unsteady; a model that also covers the transient cases is the next step. |
-| **Simplified physics:** prescribed heat flux and no solid conduction, adiabatic shell, no radiation, constant air properties, fully turbulent model (see the table above). | Scope: each addition (conjugate heat transfer, radiation, variable properties) is a larger model that I did not build. | Add conjugate heat transfer and radiation. (The inlet-turbulence sensitivity is now tested, see Part 2.) |
+| **Simplified physics:** prescribed heat flux and no solid conduction, adiabatic shell, no radiation in the sweep, constant air properties, fully turbulent model (see the table above). | Scope: each addition (conjugate heat transfer, radiation, variable properties) is a larger model that I did not build. | Add conjugate heat transfer. (Inlet turbulence and radiation are now tested on three cases each, see Part 2; the whole sweep is not re-run with radiation.) |
 | **Wall functions without prism layers:** I checked y⁺ on 4 of the 20 cases and got 0.02 to 9.9, below the log-law range of 30 to 300 (see Assumptions). | The mesh is sized for the small gaps around the components, which puts the first cell in the sublayer. | Compare T_max on a mesh with a coarser first cell (y⁺ of 30 or more) and on one with prism layers, and check the other 16 cases. |
 | **Convergence criteria:** the hot/cold heat balance (cavity) and the T_max change between write times (cabinet) are the only criteria I applied beyond the residuals. | I wanted a test I can state in one sentence. | The case template now logs T_max and dp every iteration. Next I want to re-run the 4 borderline cases with it and use the spread over the last 500 iterations as a second criterion. |
 | **Benchmark value** 4.519 was confirmed in a secondary source, not in the original paper. | I checked only a secondary source that tabulates the value. | Check against the 1983 table. |
