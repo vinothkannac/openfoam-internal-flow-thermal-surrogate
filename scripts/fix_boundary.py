@@ -24,6 +24,10 @@ TYPES = {
     "outlet": "patch",
 }
 
+# For conjugate heat transfer the components are solid regions, so they have no boundary patch of their own yet
+# (splitMeshRegions creates the interface patches later).
+TYPES_CHT = {k: v for k, v in TYPES.items() if not k.startswith("comp")}
+
 # For the 3D slice the front and back are real no-slip walls (a cabinet has side panels), not 'empty'.
 TYPES_3D = {**TYPES, "front": "wall", "back": "wall"}
 
@@ -45,7 +49,7 @@ def fix(text, types=TYPES):
 
 if __name__ == "__main__":
     path = sys.argv[1]
-    types = TYPES_3D if "--3d" in sys.argv[2:] else TYPES
+    types = TYPES_3D if "--3d" in sys.argv[2:] else TYPES_CHT if "--cht" in sys.argv[2:] else TYPES
     with open(path) as fh:
         original = fh.read()
     with open(path, "w") as fh:
