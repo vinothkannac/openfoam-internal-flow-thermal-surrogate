@@ -2,6 +2,12 @@
 
 What I changed after the first complete version. All numbers come from `results/`.
 
+## 2026-11-24 (radiation)
+- **Radiation study** (`scripts/radiation_study.py`): `fvDOM` surface radiation added to the same 2D cabinet, transparent air, black openings, shell and components with emissivity 0.9 or 0.3, on 3 cases (6 runs, all converged, run on 6 cores). T_max drops by 5 to 64 K (22 to 52 % of the rise), pressure drop changes by 0.4 to 13.5 %. The components radiate 10 to 31 % of their power; the radiative exchange sums to 0.1 to 0.3 % of the input, so it is consistent. 3.5 to 7.4 % of the power leaves through the open inlet and outlet, which depends on my black-opening assumption.
+- Added the study to `./run_all.sh studies`, tests for `add_radiation` and `face_areas` in `tests/test_studies.py`, `results/radiation_study.csv`, and the run folder to `.gitignore`.
+- Updated the README: new Part 2 section, a row in Results at a glance, and revised Radiation, Simplified-physics and Limitations rows.
+- Roadmap item 10: radiation part done; 3D slice and conjugate heat transfer are still open.
+
 ## 2026-11-24 (inlet turbulence)
 - **Inlet-turbulence sensitivity** (`scripts/inlet_turbulence_study.py`): 3 converged cases re-run with the inlet k multiplied by 0.1, 1, 10 and 100 (omega scaled with sqrt(k), so only the intensity changes). The k x1 control reproduces the sweep exactly. Up to k x10 (5 to 16 % intensity) T_max moves by less than 1 K and dp by at most 5.5 %; at k x100 (26 to 52 %) T_max moves by 1.4 to 7.2 K.
 - Added the study to `./run_all.sh studies`, a test for `set_inlet` in `tests/test_studies.py`, and `results/inlet_turbulence_study.csv`.
