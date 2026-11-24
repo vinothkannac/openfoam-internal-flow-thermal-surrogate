@@ -29,6 +29,7 @@ It carries over the workflow of my Master's thesis (parametrised CFD cases, corr
 | **Inlet turbulence** | Inlet k changed by 0.1 to 100 times on 3 cases: T_max moves by less than 1 K and dp by at most 5.5 % up to 10 times; only an unrealistic 26 to 52 % intensity moves T_max by 1.4 to 7.2 K. |
 | **Radiation** | Adding surface radiation (`fvDOM`, transparent air) lowers T_max by 5 to 64 K on three cases (emissivity 0.9 and 0.3); the components radiate 10 to 31 % of their power to the shell and the openings. The sweep without radiation is biased high. |
 | **3D slice** | Same cross-section with 12 cells through the depth and no-slip side panels (272k cells): pressure drop is 16 to 20 % higher in all three cases; T_max changes by +8.9 K and −0.4 K in the two converged cases, and the third case (low velocity) stays unsteady in 3D. |
+| **Conjugate heat transfer** | Components meshed as solids with a volumetric heat source (conductivity 200 and 5 W/(m K)): T_max is 12 to 74 K lower than in the sweep, but the mean surface temperature changes by only 0.4 to 2.6 K. The sweep's T_max is a hot-spot value of a prescribed flux. |
 | **Surrogate** | Trained on the 16 converged cases only. Leave-one-out R² = 0.998 (temperature rise) and 0.995 (pressure drop). About 10⁶ times faster than one CFD run. |
 
 The honest caveats are in [Limitations](#limitations); please read them before using any number.
@@ -39,7 +40,7 @@ The honest caveats are in [Limitations](#limitations); please read them before u
 - [Repository layout](#repository-layout)
 - [Part 1: validation on the heated cavity](#part-1-validation-on-the-heated-cavity)
 - [Part 2: the cabinet and its parameter sweep](#part-2-the-cabinet-and-its-parameter-sweep)
-- [Mesh study, second-order scheme, transient sensitivity, active learning, inlet turbulence, radiation, 3D slice](#mesh-study-for-the-cabinet) (in Part 2)
+- [Mesh study, second-order scheme, transient sensitivity, active learning, inlet turbulence, radiation, 3D slice, conjugate heat transfer](#mesh-study-for-the-cabinet) (in Part 2)
 - [Part 3: the surrogate model](#part-3-the-surrogate-model)
 - [Decisions and what I changed](#decisions-and-what-i-changed)
 - [Assumptions and simplifications](#assumptions-and-simplifications)
@@ -87,6 +88,7 @@ scripts/
   inlet_turbulence_study.py inlet k x0.1 to x100 on 3 converged cases (T_max, dp vs sweep)
   radiation_study.py      fvDOM surface radiation on 3 cases x 2 emissivities + radiative heat balance
   slice3d_study.py        3D slice (12 cells through the depth, side panels as walls), 3 cases on 6 cores
+  cht_study.py            conjugate heat transfer: components as solid regions with a heat source, 3 cases x 2 conductivities
   check_env.sh         preflight: OpenFOAM environment, tools, Python packages
   check_rayleigh.py    verifies that the cavity really has Ra = 1e5
   mesh_study.py        3-mesh study: Nu, error vs benchmark, GCI
@@ -417,6 +419,39 @@ What this shows:
 - **`u0.5_q400` is not a steady result in 3D.** T_max at the last three write times is 403.6, 402.8 and 390.7 K, and the spread over the last 500 iterations is 16.6 K (the two converged cases: 0.003 and 0.006 K). The −9.0 K in the table is therefore not a comparison I can use. It fits the unsteady behaviour found in Part 2, where flows with low velocity and buoyancy do not settle, and it suggests that the unsteady region reaches higher velocities in 3D; I only have one case, so I did not try to locate it.
 - **Scope:** three cases, one depth (0.1 m, a thin slice, so the side panels have a large effect; a deeper cabinet would show less), one 3D mesh with no mesh study (the 2D cabinet mesh is already not converged, see above), steady `upwind` solver. Data: `results/slice3d_study.csv`.
 
+### Conjugate heat transfer
+
+In the sweep the three components are holes in the mesh with a fixed heat flux on their surface. `scripts/cht_study.py` meshes them as solid blocks (`make_cabinet_mesh.py --solids`, 2176 cells per block, the air keeps its 22 636 cells), puts a uniform heat source inside each block and lets the heat conduct to the air with `chtMultiRegionSimpleFoam` (one air region, three solid regions, coupled at the interfaces by temperature and heat flux). I ran the same three cases as in the other studies with two solid conductivities. **Assumptions**, all mine and none of them data of a real product:
+
+1. **Same total power as the sweep.** Each block generates `P = q × 0.7 m × 0.1 m` (the heat the flux carries through the four sides: perimeter times depth), so 1, 0.6 and 0.3 times that for components 1, 2 and 3. In the sweep the power leaves through the surface; here it is generated evenly over the volume of the block.
+2. **Two conductivities:** 200 W/(m K), a metal block such as aluminium (the block is nearly one temperature), and 5 W/(m K), a poor conductor such as potted electronics. Density 2719 kg/m³ and Cp 871 J/(kg K) are copied from the OpenFOAM tutorial; they do not matter in a steady state. The conductivity is constant and uniform inside a block.
+3. **Perfect thermal contact** between solid and air: no contact resistance, no coating, no thermal interface material.
+4. **The air side is unchanged:** same geometry, in-plane mesh, wall functions, k-ω SST, inlet k and ω, `upwind`, relaxation, 8000 iterations, adiabatic shell, no radiation, 2D (`empty` front and back).
+5. **T_max** is the largest temperature on the air side of the interfaces, the same kind of quantity as in the sweep. I also report the largest temperature inside the solids.
+6. **dp** is the same p_rgh difference as in the sweep.
+7. **Interface condition:** `turbulentTemperatureRadCoupledMixed` on both sides with `useImplicit false` (and no radiation, `qr none`).
+
+**A mistake I found and corrected.** The OpenFOAM tutorial uses `useImplicit true`. With it, only 86 % of the input power reached the air (measured as the enthalpy flux through inlet and outlet, `Cp × Σ ṁ(T − T_inlet)`), the same share for both conductivities and for every case, and my first set of results was too cool (for example 340.8 K instead of 348.1 K for `u1_q600`). Powering one component at a time gave 83 to 85 % each, so it was not tied to a component. With `useImplicit false` the balance closes, and the older `turbulentTemperatureCoupledBaffleMixed` condition gives the identical result. I discarded the first set and re-ran all six cases. I did not find out why the implicit form loses heat in this setup.
+
+All six runs meet my convergence criterion (the hottest solid temperature changes by less than 0.05 K between the last write times). The heat balance is now −0.26 %, −2.15 % and −0.36 % for the three cases, the same as the sweep's own −0.3 %, −2.2 % and −0.4 %.
+
+| Case | κ (W/(m K)) | T_max air side (K) | Δ vs sweep (K) | Hottest point in solid (K) | Mean surface T (K), CHT / sweep | Δdp (%) |
+|---|---|---|---|---|---|---|
+| `u0.5_q400` | 200 | 341.2 | −58.6 | 341.2 | 327.4 / 329.2 | +2.4 |
+| | 5 | 344.8 | −55.0 | 346.3 | 327.7 / 329.2 | +2.8 |
+| `u1_q100` | 200 | 302.3 | −12.8 | 302.3 | 299.1 / 299.7 | +0.2 |
+| | 5 | 303.3 | −11.7 | 303.7 | 299.2 / 299.7 | +0.2 |
+| `u1_q600` | 200 | 348.1 | −73.8 | 348.1 | 329.3 / 331.8 | +0.6 |
+| | 5 | 353.8 | −68.1 | 356.1 | 329.8 / 331.8 | +0.6 |
+
+What this shows:
+
+- **T_max is 12 to 74 K lower than in the sweep (51 to 58 % of the rise above the inlet), but the mean surface temperature of the components is only 0.4 to 2.6 K lower.** What changes is the spread: for `u0.5_q400` the faces in the sweep range from 308 to 400 K, with conduction from 317 to 341 K. So the sweep's T_max is the hottest face of a prescribed-flux surface, where nothing can spread the heat, and it overstates the peak surface temperature of a block that conducts. The drop does not mean that the components receive less heat. The mean is a plain average over the interface faces, not area-weighted.
+- **The poorer conductor (5 W/(m K)) is hotter than the metal one** by 1.0 to 5.7 K at the surface and up to 2.3 K more at the hottest point inside; for 200 W/(m K) the inside is at most 0.05 K above the surface. Even with the poor conductor the peak is more than 50 % below the sweep's, so the result does not depend much on which of my two conductivities is right. A much lower conductivity would move it back towards the sweep; I did not test one.
+- **The pressure drop changes by 0.2 to 2.8 %**, so the flow is hardly affected.
+- **What it means for the surrogate:** its T_max target is the peak face temperature of a prescribed-flux component, not a component temperature. I did not re-run the sweep with conduction, so I cannot give a correction for the whole range.
+- **Scope:** three cases, two assumed conductivities, perfect contact, uniform volumetric heating, 2D, steady `upwind` solver, no radiation and not combined with the 3D slice. Data: `results/cht_study.csv`.
+
 ## Decisions and what I changed
 
 The case files were first written without access to an OpenFOAM installation, so the first runs needed debugging. Only numerics were changed; **no physical setting (geometry, ΔT, properties, boundary conditions) was changed.**
@@ -443,7 +478,7 @@ Everything below is a modelling choice I made, not a measured fact. The effect c
 | Area | Assumption or simplification | Effect on the results |
 |---|---|---|
 | Geometry | The cabinet is a generic 2D section (0.6 m × 1.2 m, three equal rectangles, inlet and outlet slots in line), one cell thick with `empty` front and back. It is not a model of a real product. | Components behave like infinitely long bars; there is no flow in the third direction. Absolute values do not transfer to a real cabinet. |
-| Heat sources | Each component has a uniform, prescribed heat flux (`q1 = q_ref`, `q2 = 0.6 q_ref`, `q3 = 0.3 q_ref`). The 1 : 0.6 : 0.3 split is my choice. | The component surface temperature is a result, not an input. There is no conduction inside the components and no heat spreading, so hot spots are probably sharper than in reality. |
+| Heat sources | Each component has a uniform, prescribed heat flux (`q1 = q_ref`, `q2 = 0.6 q_ref`, `q3 = 0.3 q_ref`). The 1 : 0.6 : 0.3 split is my choice. | The component surface temperature is a result, not an input. There is no conduction inside the components and no heat spreading, so hot spots are sharper than with conduction: with solid components (see Conjugate heat transfer in Part 2) T_max is 12 to 74 K lower, while the mean surface temperature is nearly the same. |
 | Shell | Cabinet walls are adiabatic and no-slip. | No heat is lost through the shell, which overestimates temperatures. |
 | Radiation | Not modelled in the sweep. I tested it on three cases with `fvDOM` (see Radiation in Part 2). | Underestimates heat removal: with radiation T_max is 5 to 64 K lower in the three cases I tested. The sweep temperatures are therefore upper bounds for the model. |
 | Air properties | Ideal gas with constant μ = 1.8e-5 Pa s, Cp = 1005 J/(kg K), Pr = 0.71 (no temperature dependence), pressure 1e5 Pa. | At the hottest component faces (up to about 515 K in the transient runs) the real viscosity and conductivity are larger. |
@@ -471,7 +506,7 @@ Everything below is a modelling choice I made, not a measured fact. The effect c
 | **Transient sensitivity tested on one case only** (`u0.2_q100`: insensitive to time step and run length). The convection scheme and the mesh were not varied, and the transient runs use different schemes from the steady sweep. | Computing budget: each run takes 40 to 110 minutes. | Repeat for the 8 K-std cases and with the mesh study's fine mesh. |
 | **First-order `upwind` in the steady sweep.** Restarting four converged cases with `linearUpwind` raised T_max by 10 to 72 K and the solution stopped being steady, while an `upwind` control moved by 0.1 K. | I switched to `upwind` for robustness, together with lower relaxation. The restart test separates the two: the scheme explains the change. | Time-average second-order runs (transient) for the whole sweep. |
 | **Surrogate trained on 16 points of a 2-parameter space:** valid only inside the sampled range, and the hold-out score rests on 4 cases. | Each training point is one CFD run, so the number of points is limited by the same budget. | Active learning (above) added 4 converged cases but half of its proposals were unsteady; a model that also covers the transient cases is the next step. |
-| **Simplified physics:** prescribed heat flux and no solid conduction, adiabatic shell, no radiation in the sweep, constant air properties, fully turbulent model (see the table above). | Scope: each addition (conjugate heat transfer, radiation, variable properties) is a larger model that I did not build. | Add conjugate heat transfer. (Inlet turbulence and radiation are now tested on three cases each, see Part 2; the whole sweep is not re-run with radiation.) |
+| **Simplified physics:** prescribed heat flux in the sweep (no solid conduction), adiabatic shell, no radiation in the sweep, constant air properties, fully turbulent model (see the table above). | Scope: each addition (conjugate heat transfer, radiation, variable properties) is a larger model that I did not build. | Re-run the whole sweep with conducting components and radiation. (Inlet turbulence, radiation, a 3D slice and conjugate heat transfer are now tested on three cases each, see Part 2; the whole sweep is not re-run with them.) |
 | **Wall functions without prism layers:** I checked y⁺ on 4 of the 20 cases and got 0.02 to 9.9, below the log-law range of 30 to 300 (see Assumptions). | The mesh is sized for the small gaps around the components, which puts the first cell in the sublayer. | Compare T_max on a mesh with a coarser first cell (y⁺ of 30 or more) and on one with prism layers, and check the other 16 cases. |
 | **Convergence criteria:** the hot/cold heat balance (cavity) and the T_max change between write times (cabinet) are the only criteria I applied beyond the residuals. | I wanted a test I can state in one sentence. | The case template now logs T_max and dp every iteration. Next I want to re-run the 4 borderline cases with it and use the spread over the last 500 iterations as a second criterion. |
 | **Benchmark value** 4.519 was confirmed in a secondary source, not in the original paper. | I checked only a secondary source that tabulates the value. | Check against the 1983 table. |
