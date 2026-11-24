@@ -7,7 +7,7 @@
 #   ./run_all.sh cabinet    mesh + 20-case sweep
 #   ./run_all.sh transient  transient re-run of the unconverged cases + animation (about 2 h on 2 cores)
 #   ./run_all.sh ml         surrogate training + results summary
-#   ./run_all.sh studies    Tier-2 studies: cabinet mesh study, linearUpwind restart, transient sensitivity, active learning, inlet turbulence (hours)
+#   ./run_all.sh studies    Tier-2 studies: cabinet mesh study, linearUpwind restart, transient sensitivity, active learning, inlet turbulence, radiation (hours)
 #   ./run_all.sh all        cavity, cabinet, ml
 # JOBS=4 ./run_all.sh cabinet   runs 4 cabinet cases in parallel
 cd "$(dirname "$0")" || exit 1
@@ -35,7 +35,8 @@ stage_ml()      { python3 scripts/train_surrogate.py --converged-only && python3
 stage_studies() { python3 scripts/cabinet_mesh_study.py --jobs "$JOBS" && python3 scripts/linear_upwind_study.py --jobs "$JOBS" \
                   && python3 scripts/transient_sensitivity.py start && python3 scripts/transient_sensitivity.py run --jobs "$JOBS" \
                   && python3 scripts/transient_sensitivity.py collect && python3 scripts/active_learning.py run && python3 scripts/active_learning.py summarize \
-                  && python3 scripts/inlet_turbulence_study.py --jobs "$JOBS"; }
+                  && python3 scripts/inlet_turbulence_study.py --jobs "$JOBS" \
+                  && python3 scripts/radiation_study.py --jobs "$JOBS"; }
 
 sh scripts/check_env.sh || exit 1
 case "$1" in
