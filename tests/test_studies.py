@@ -17,6 +17,7 @@ import fix_boundary  # noqa: E402
 import make_cabinet_mesh as mcm  # noqa: E402
 import radiation_study as rs  # noqa: E402
 import slice3d_study as s3  # noqa: E402
+import cht_study as cht  # noqa: E402
 import linear_upwind_study as lu  # noqa: E402
 import transient_sensitivity as tsens  # noqa: E402
 
@@ -231,6 +232,67 @@ class TestSlice3D(unittest.TestCase):
             (d / "0" / "k").write_text("boundaryField { }\n")
             with self.assertRaises(RuntimeError):
                 s3.sides_as_walls(d)
+
+
+class TestCHT(unittest.TestCase):
+    def template(self, name):
+        return (ROOT / "cabinet_case" / "0.orig" / name).read_text()
+
+    def test_power_is_flux_times_surface_of_the_block(self):
+        # component 1: q = 100 W/m2 on a 0.7 m perimeter and 0.1 m depth is 7 W; components 2 and 3 get 0.6 and 0.3 of it
+        self.assertAlmostEqual(cht.component_power(100, 1.0), 7.0)
+        self.assertAlmostEqual(cht.component_power(100, 0.6), 4.2)
+        self.assertAlmostEqual(cht.component_power(100, 0.3), 2.1)
+
+    def test_air_temperature_has_three_interfaces_and_no_flux(self):
+        T = cht.fluid_field("T", self.template("T"), 1.0)
+        self.assertEqual(T.count("turbulentTemperatureRadCoupledMixed"), 3)
+        for c in ("comp1", "comp2", "comp3"):
+            self.assertIn("fluid_to_" + c, T)
+        self.assertNotIn("externalWallHeatFluxTemperature", T.replace("walls", ""))
+        self.assertNotIn("@", T)
+
+    def test_interfaces_use_the_explicit_coupling(self):
+        # useImplicit true lost about 14 % of the heat in my runs (see the README), so I check that it is not used
+        for text in (cht.fluid_field("T", self.template("T"), 1.0), cht.SOLID_T, cht.FLUID_T_INTERFACE):
+            self.assertNotIn("useImplicit     true", text)
+
+    def test_other_fields_use_the_interface_patch_names(self):
+        U = cht.fluid_field("U", self.template("U"), 0.5)
+        self.assertIn("fluid_to_comp1", U)
+        self.assertNotIn("|comp1", U)
+        self.assertIn("0.5", U)      # the inlet velocity placeholder is filled
+
+    def test_heat_to_air_of_a_simple_flow(self):
+        # 2 faces on the inlet (flux -0.01 kg/s each, at 293.15 K) and 2 on the outlet (+0.01 kg/s at 303.15 K):
+        # the heat is 1005 * 2 * 0.01 * 10 = 201 W
+        with tempfile.TemporaryDirectory() as t:
+            d = Path(t)
+            (d / "fluid").mkdir()
+            def field(path, inlet, outlet):
+                (d / "fluid" / path).write_text(
+                    "boundaryField\n{\n    inlet\n    {\n        value nonuniform List<scalar> 2(%s %s);\n    }\n"
+                    "    outlet\n    {\n        value nonuniform List<scalar> 2(%s %s);\n    }\n}\n" % (*inlet, *outlet))
+            field("phi", (-0.01, -0.01), (0.01, 0.01))
+            field("T", (293.15, 293.15), (303.15, 303.15))
+            self.assertAlmostEqual(cht.heat_to_air(d), 201.0, places=6)
+
+    def test_wrong_temperature_file_fails(self):
+        with self.assertRaises(RuntimeError):
+            cht.fluid_field("T", "boundaryField { }", 1.0)
+
+    def test_internal_max_reads_a_list_and_a_uniform_value(self):
+        with tempfile.TemporaryDirectory() as t:
+            f = Path(t) / "T"
+            f.write_text("internalField   nonuniform List<scalar> 3(300 310.5 305);\n")
+            self.assertEqual(cht.internal_max(f), 310.5)
+            f.write_text("internalField   uniform 293.15;\n")
+            self.assertEqual(cht.internal_max(f), 293.15)
+
+    def test_solid_mesh_has_no_component_patches(self):
+        with tempfile.TemporaryDirectory() as t:
+            names, _ = mcm.build(str(Path(t) / "c.msh"), scale=3.0, solids=True)
+        self.assertEqual(names, ["back", "front", "inlet", "outlet", "walls"])
 
 
 if __name__ == "__main__":
