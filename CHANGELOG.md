@@ -2,6 +2,13 @@
 
 What I changed after the first complete version. All numbers come from `results/`.
 
+## 2026-11-24 (conjugate heat transfer)
+- **Conjugate heat transfer** (`scripts/cht_study.py`): the three components meshed as solid blocks with a uniform heat source of the same total power as the sweep, coupled to the air with `chtMultiRegionSimpleFoam`; 3 cases x 2 assumed conductivities (200 and 5 W/(m K)), 6 runs, all converged. T_max is 12 to 74 K lower than in the sweep, but the mean surface temperature is only 0.4 to 2.6 K lower: the sweep's T_max is a hot-spot value of a prescribed flux. Pressure drop changes by 0.2 to 2.8 %. Assumptions are listed in the README.
+- **Corrected mistake:** with the tutorial setting `useImplicit true` the coupling lost about 14 % of the heat (86 % of the power reached the air). I found it with an enthalpy-flux balance, switched to `useImplicit false` (balance within 0.4 % and 2.2 %, like the sweep), and discarded and re-ran my first results. I did not find why the implicit form loses heat.
+- `make_cabinet_mesh.py` got a `--solids` option and `fix_boundary.py` a `--cht` option. Added the study to `./run_all.sh studies`, 8 tests in `tests/test_studies.py`, `results/cht_study.csv` (with the heat balance), and the run folders to `.gitignore`.
+- Updated the README: new Part 2 section with all assumptions, a row in Results at a glance, and the Heat-sources and Simplified-physics rows.
+- Roadmap item 10: all four parts are now done.
+
 ## 2026-11-24 (3D slice)
 - **3D slice** (`scripts/slice3d_study.py`): same cross-section and in-plane mesh with 12 graded cells through the 0.1 m depth (271 632 cells) and no-slip adiabatic side panels instead of `empty`. Three cases, each on 6 cores, 55 to 64 minutes. Pressure drop is 16 to 20 % higher in all three. T_max is +8.9 K for `u1_q100` and −0.4 K for `u1_q600` (both converged); `u0.5_q400` does not converge in 3D (T_max spread 16.6 K over the last 500 iterations), so I do not use its number.
 - `make_cabinet_mesh.py` got a `--layers` option (default 1, the 2D case, unchanged) and `fix_boundary.py` a `--3d` option that makes front and back walls.
