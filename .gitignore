@@ -29,3 +29,6 @@ cabinet_case/runs_transient_active/
 cabinet_case/runs_radiation/
 cabinet_case/runs_slice3d/
 cabinet_case/mesh3d/
+cabinet_case/mesh_cht/
+cabinet_case/runs_cht/
+cabinet_case/runs_cht_diag/
