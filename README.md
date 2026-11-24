@@ -28,6 +28,7 @@ It carries over the workflow of my Master's thesis (parametrised CFD cases, corr
 | **Second-order scheme** | `linearUpwind` raises T_max by 10 to 72 K and the steady solution stops being steady; the steady `upwind` values are biased low. |
 | **Inlet turbulence** | Inlet k changed by 0.1 to 100 times on 3 cases: T_max moves by less than 1 K and dp by at most 5.5 % up to 10 times; only an unrealistic 26 to 52 % intensity moves T_max by 1.4 to 7.2 K. |
 | **Radiation** | Adding surface radiation (`fvDOM`, transparent air) lowers T_max by 5 to 64 K on three cases (emissivity 0.9 and 0.3); the components radiate 10 to 31 % of their power to the shell and the openings. The sweep without radiation is biased high. |
+| **3D slice** | Same cross-section with 12 cells through the depth and no-slip side panels (272k cells): pressure drop is 16 to 20 % higher in all three cases; T_max changes by +8.9 K and −0.4 K in the two converged cases, and the third case (low velocity) stays unsteady in 3D. |
 | **Surrogate** | Trained on the 16 converged cases only. Leave-one-out R² = 0.998 (temperature rise) and 0.995 (pressure drop). About 10⁶ times faster than one CFD run. |
 
 The honest caveats are in [Limitations](#limitations); please read them before using any number.
@@ -38,7 +39,7 @@ The honest caveats are in [Limitations](#limitations); please read them before u
 - [Repository layout](#repository-layout)
 - [Part 1: validation on the heated cavity](#part-1-validation-on-the-heated-cavity)
 - [Part 2: the cabinet and its parameter sweep](#part-2-the-cabinet-and-its-parameter-sweep)
-- [Mesh study, second-order scheme, transient sensitivity, active learning, inlet turbulence, radiation](#mesh-study-for-the-cabinet) (in Part 2)
+- [Mesh study, second-order scheme, transient sensitivity, active learning, inlet turbulence, radiation, 3D slice](#mesh-study-for-the-cabinet) (in Part 2)
 - [Part 3: the surrogate model](#part-3-the-surrogate-model)
 - [Decisions and what I changed](#decisions-and-what-i-changed)
 - [Assumptions and simplifications](#assumptions-and-simplifications)
@@ -85,6 +86,7 @@ scripts/
   active_learning.py      GP-uncertainty-driven choice of new CFD cases
   inlet_turbulence_study.py inlet k x0.1 to x100 on 3 converged cases (T_max, dp vs sweep)
   radiation_study.py      fvDOM surface radiation on 3 cases x 2 emissivities + radiative heat balance
+  slice3d_study.py        3D slice (12 cells through the depth, side panels as walls), 3 cases on 6 cores
   check_env.sh         preflight: OpenFOAM environment, tools, Python packages
   check_rayleigh.py    verifies that the cavity really has Ra = 1e5
   mesh_study.py        3-mesh study: Nu, error vs benchmark, GCI
@@ -398,6 +400,23 @@ What this shows:
 - **Between 3.5 and 7.4 % of the power leaves through the open inlet and outlet as radiation.** This depends directly on my assumption that the openings are black at about 293 K. With closed or screened openings it would be less.
 - **Scope:** three cases, a 2D section (in 3D the view factors to the front and back walls would add more exchange), grey diffuse surfaces with one emissivity, transparent air, steady `upwind` solver. The four unsteady cases and the other emissivities were not run, so I cannot say how the effect varies over the sweep or whether a surrogate trained on the sweep should include radiation. Data: `results/radiation_study.csv`.
 
+### 3D slice
+
+The sweep is 2D: one cell through the 0.1 m depth with `empty` front and back, so nothing can happen in the third direction. `scripts/slice3d_study.py` keeps the same cross-section, in-plane mesh and depth (so inlet area and total heat are the same as in the sweep) and splits the depth into 12 cells, 3 mm thick at the side panels and 16 mm in the middle (`make_cabinet_mesh.py --layers 12`, 271 632 cells, max aspect ratio 17.6, max skewness 0.56, `checkMesh` OK). Front and back become no-slip, adiabatic walls with the same wall functions as the shell, because a real cabinet has side panels. The components still span the full depth. I ran the same three cases as in the two studies above with the sweep's steady settings (8000 iterations, `upwind`), each on 6 cores (55 to 64 minutes per case). So the only difference to the sweep is the third dimension. Pressure drop is area-weighted here because the graded layers make the inlet faces unequal.
+
+| Case | Converged | T_max 3D (K) | T_max sweep (K) | ΔT_max (K) | dp 3D (Pa) | dp sweep (Pa) | Δdp (%) |
+|---|---|---|---|---|---|---|---|
+| `u0.5_q400` | **no** | 390.7 | 399.8 | −9.0 | 0.396 | 0.329 | +20.2 |
+| `u1_q100` | yes | 324.0 | 315.1 | +8.9 | 1.245 | 1.057 | +17.8 |
+| `u1_q600` | yes | 421.5 | 421.9 | −0.4 | 1.263 | 1.086 | +16.2 |
+
+What this shows:
+
+- **The pressure drop is 16 to 20 % higher in 3D in all three cases.** That is consistent with the friction of the side panels, which the 2D model does not have. I did not test the friction explanation separately (for example with a free-slip side), so it is a likely cause, not a proven one.
+- **T_max moves differently in the two converged cases:** +8.9 K (a 41 % larger rise above the inlet) for `u1_q100`, and −0.4 K (0.3 %) for `u1_q600`. I do not know why the low-load case reacts more; I did not investigate it. So the 2D numbers are within about 0.3 to 41 % of the 3D slice in the rise, and no single correction factor is supported by three cases.
+- **`u0.5_q400` is not a steady result in 3D.** T_max at the last three write times is 403.6, 402.8 and 390.7 K, and the spread over the last 500 iterations is 16.6 K (the two converged cases: 0.003 and 0.006 K). The −9.0 K in the table is therefore not a comparison I can use. It fits the unsteady behaviour found in Part 2, where flows with low velocity and buoyancy do not settle, and it suggests that the unsteady region reaches higher velocities in 3D; I only have one case, so I did not try to locate it.
+- **Scope:** three cases, one depth (0.1 m, a thin slice, so the side panels have a large effect; a deeper cabinet would show less), one 3D mesh with no mesh study (the 2D cabinet mesh is already not converged, see above), steady `upwind` solver. Data: `results/slice3d_study.csv`.
+
 ## Decisions and what I changed
 
 The case files were first written without access to an OpenFOAM installation, so the first runs needed debugging. Only numerics were changed; **no physical setting (geometry, ΔT, properties, boundary conditions) was changed.**
@@ -446,7 +465,7 @@ Everything below is a modelling choice I made, not a measured fact. The effect c
 
 | Limitation | Cause | What I would do next |
 |---|---|---|
-| **2D section of a 3D problem.** Absolute temperatures and pressure drops are not representative of a real cabinet. | Computing budget: a 3D mesh with the same resolution needs far more cells and run time than a two-core laptop handles comfortably. | Build a 3D case and check how much the 2D numbers change. |
+| **2D section of a 3D problem.** Absolute temperatures and pressure drops are not representative of a real cabinet. I tested a 3D slice on three cases (see Part 2): pressure drop 16 to 20 % higher, T_max +8.9 and −0.4 K in the two converged cases, the third case unsteady. | Computing budget: the 3D slice needed 272k cells and about an hour per case on 6 cores, against 6 minutes for 2D on 2 cores. | Run the whole sweep in 3D, vary the depth, and add a mesh study for the 3D mesh. |
 | **Cabinet not mesh-converged.** A three-mesh study of 4 cases gives T_max rises 10 to 14 % higher on the fine mesh, apparent order below 1, GCI 30 to 48 %. | Computing budget: the sweep was run on one mesh. | Test wall treatment and prism layers, use an integral quantity, and refine further. |
 | **Four of the 20 cabinet cases are unsteady** and cannot be converged with a steady solver. Their steady values are biased low (see the transient table). The surrogate is trained without them, which leaves 16 points. | Physics of the problem, not a budget issue. I resolved it with a transient solver, which is the expensive part. | Longer transient runs and a transient sweep, so the unsteady region is part of the surrogate. |
 | **Transient sensitivity tested on one case only** (`u0.2_q100`: insensitive to time step and run length). The convection scheme and the mesh were not varied, and the transient runs use different schemes from the steady sweep. | Computing budget: each run takes 40 to 110 minutes. | Repeat for the 8 K-std cases and with the mesh study's fine mesh. |
