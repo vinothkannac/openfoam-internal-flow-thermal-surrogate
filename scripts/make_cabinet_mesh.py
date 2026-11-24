@@ -10,8 +10,10 @@ Geometry (metres, 2D section, one prism layer in z):
     wall, three rectangular heat-source components inside.
 Patches: inlet, outlet, walls, comp1, comp2, comp3, front, back, volume 'fluid'.
 
-    python3 scripts/make_cabinet_mesh.py --out cabinet_case/cabinet.msh [--scale 1.0]
+    python3 scripts/make_cabinet_mesh.py --out cabinet_case/cabinet.msh [--scale 1.0] [--layers 12]
 --scale > 1 makes the mesh coarser (faster), < 1 finer.
+--layers N (default 1) splits the 0.1 m depth into N cells for the 3D slice (slice3d_study.py). The layers are
+thin at the front and back wall and thicker in the middle, so the walls are resolved like the other walls.
 """
 import argparse
 import math
@@ -20,6 +22,7 @@ import sys
 import gmsh
 
 W, H, DEPTH = 0.6, 1.2, 0.1
+LAYER_GROWTH = 1.4  # growth ratio of the layer thickness from each side wall towards the middle (3D slice only)
 # The inlet slot (bottom wall) and outlet slot (top wall) share the same x-range, so
 # air enters and leaves along the same vertical line.
 SLOT = (0.2, 0.4)
@@ -32,7 +35,25 @@ COMPS = {  # name: (x0, y0, x1, y1)
 }
 
 
-def build(out, scale=1.0, lc_wall=0.004, lc_far=0.025):
+def layer_fractions(n, growth=LAYER_GROWTH):
+    """Cumulative heights (0..1) of n layers through the depth, thin at both ends and thicker in the middle.
+    n = 1 gives [1.0], which is the one-cell-thick 2D case."""
+    if n == 1:
+        return [1.0]
+    half = n // 2
+    # thickness of the layers on one side, geometric: t0, t0*g, t0*g^2, ... (an odd n gets one middle layer)
+    t = [growth ** i for i in range(half)]
+    sizes = t + ([t[-1] * growth] if n % 2 else []) + t[::-1]
+    total = sum(sizes)
+    out, acc = [], 0.0
+    for s in sizes:
+        acc += s / total
+        out.append(acc)
+    out[-1] = 1.0
+    return out
+
+
+def build(out, scale=1.0, lc_wall=0.004, lc_far=0.025, layers=1):
     gmsh.initialize()
     gmsh.option.setNumber("General.Terminal", 0)
     gmsh.model.add("cabinet")
@@ -61,7 +82,9 @@ def build(out, scale=1.0, lc_wall=0.004, lc_far=0.025):
     surf = occ.addPlaneSurface(loops)
     # One cell through the thickness, recombined to prisms/hexes: OpenFOAM is 3D, so a
     # "2D" case is one cell thick with 'empty' front and back patches.
-    out_tags = occ.extrude([(2, surf)], 0, 0, DEPTH, numElements=[1], recombine=True)
+    # (layers > 1 is the 3D slice: several cells through the depth, with graded thickness)
+    out_tags = occ.extrude([(2, surf)], 0, 0, DEPTH, numElements=[1] * layers,
+                           heights=layer_fractions(layers), recombine=True)
     occ.synchronize()
 
     vol_tags = [t for d, t in out_tags if d == 3]
@@ -112,7 +135,8 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="cabinet_case/cabinet.msh")
     ap.add_argument("--scale", type=float, default=1.0)
+    ap.add_argument("--layers", type=int, default=1, help="cells through the depth (1 = the 2D case)")
     a = ap.parse_args()
-    names, n = build(a.out, a.scale)
+    names, n = build(a.out, a.scale, layers=a.layers)
     print(f"wrote {a.out}: patches {names}, {n} nodes")
     sys.exit(0)
