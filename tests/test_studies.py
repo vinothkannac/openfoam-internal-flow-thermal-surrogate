@@ -13,7 +13,10 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import active_learning as al  # noqa: E402
 import cabinet_mesh_study as ms  # noqa: E402
 import inlet_turbulence_study as its  # noqa: E402
+import fix_boundary  # noqa: E402
+import make_cabinet_mesh as mcm  # noqa: E402
 import radiation_study as rs  # noqa: E402
+import slice3d_study as s3  # noqa: E402
 import linear_upwind_study as lu  # noqa: E402
 import transient_sensitivity as tsens  # noqa: E402
 
@@ -183,6 +186,51 @@ class TestRadiation(unittest.TestCase):
             (d / "faces").write_text("1\n(\n4(0 1 2 3)\n)\n")
             (d / "boundary").write_text("1\n(\n    top\n    {\n        type patch;\n        nFaces 1;\n        startFace 0;\n    }\n)\n")
             self.assertAlmostEqual(float(rs.face_areas(d, "top").sum()), 1.0)
+
+
+class TestSlice3D(unittest.TestCase):
+    def test_layers_add_up_and_are_symmetric(self):
+        f = mcm.layer_fractions(12)
+        self.assertEqual(len(f), 12)
+        self.assertAlmostEqual(f[-1], 1.0)
+        thick = [b - a for a, b in zip([0] + f[:-1], f)]
+        self.assertAlmostEqual(thick[0], thick[-1])
+        self.assertGreater(thick[5], thick[0])      # thicker in the middle than at the walls
+
+    def test_one_layer_is_the_2d_case(self):
+        self.assertEqual(mcm.layer_fractions(1), [1.0])
+
+    def test_front_and_back_become_walls_only_in_3d(self):
+        text = "front\n    {\n        type patch;\n    }\n"
+        self.assertEqual(fix_boundary.TYPES["front"], "empty")
+        self.assertEqual(fix_boundary.TYPES_3D["front"], "wall")
+        self.assertEqual(fix_boundary.TYPES_3D["inlet"], fix_boundary.TYPES["inlet"])
+        self.assertIn("wall", fix_boundary.fix("\n" + text + "\n".join(
+            "\n    %s\n    {\n        type patch;\n    }" % n for n in
+            ["back", "walls", "inlet", "outlet", "comp1", "comp2", "comp3"]), fix_boundary.TYPES_3D))
+
+    def test_sides_as_walls_changes_every_field(self):
+        with tempfile.TemporaryDirectory() as t:
+            d = Path(t)
+            (d / "0").mkdir()
+            for f in (ROOT / "cabinet_case" / "0.orig").iterdir():
+                text = f.read_text()
+                for k, v in {"@UIN@": "1", "@Q1@": "100", "@Q2@": "60", "@Q3@": "30"}.items():
+                    text = text.replace(k, v)
+                (d / "0" / f.name).write_text(text)
+            s3.sides_as_walls(d)
+            for f in (d / "0").iterdir():
+                text = f.read_text()
+                self.assertIn("front|back", text)          # the side panels are named in a wall entry
+                self.assertNotIn("empty", text)            # and nothing is 'empty' any more
+
+    def test_unexpected_field_file_fails(self):
+        with tempfile.TemporaryDirectory() as t:
+            d = Path(t)
+            (d / "0").mkdir()
+            (d / "0" / "k").write_text("boundaryField { }\n")
+            with self.assertRaises(RuntimeError):
+                s3.sides_as_walls(d)
 
 
 if __name__ == "__main__":

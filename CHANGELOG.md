@@ -2,6 +2,13 @@
 
 What I changed after the first complete version. All numbers come from `results/`.
 
+## 2026-11-24 (3D slice)
+- **3D slice** (`scripts/slice3d_study.py`): same cross-section and in-plane mesh with 12 graded cells through the 0.1 m depth (271 632 cells) and no-slip adiabatic side panels instead of `empty`. Three cases, each on 6 cores, 55 to 64 minutes. Pressure drop is 16 to 20 % higher in all three. T_max is +8.9 K for `u1_q100` and −0.4 K for `u1_q600` (both converged); `u0.5_q400` does not converge in 3D (T_max spread 16.6 K over the last 500 iterations), so I do not use its number.
+- `make_cabinet_mesh.py` got a `--layers` option (default 1, the 2D case, unchanged) and `fix_boundary.py` a `--3d` option that makes front and back walls.
+- Added the study to `./run_all.sh studies`, 5 tests in `tests/test_studies.py`, `results/slice3d_study.csv`, and the run folders to `.gitignore`.
+- Updated the README: new Part 2 section, a row in Results at a glance, and the 2D-section row in Limitations.
+- Roadmap item 10: 3D part done; conjugate heat transfer is still open.
+
 ## 2026-11-24 (radiation)
 - **Radiation study** (`scripts/radiation_study.py`): `fvDOM` surface radiation added to the same 2D cabinet, transparent air, black openings, shell and components with emissivity 0.9 or 0.3, on 3 cases (6 runs, all converged, run on 6 cores). T_max drops by 5 to 64 K (22 to 52 % of the rise), pressure drop changes by 0.4 to 13.5 %. The components radiate 10 to 31 % of their power; the radiative exchange sums to 0.1 to 0.3 % of the input, so it is consistent. 3.5 to 7.4 % of the power leaves through the open inlet and outlet, which depends on my black-opening assumption.
 - Added the study to `./run_all.sh studies`, tests for `add_radiation` and `face_areas` in `tests/test_studies.py`, `results/radiation_study.csv`, and the run folder to `.gitignore`.
