@@ -1,4 +1,5 @@
 """Tests for the pure helpers of the Tier-2 study scripts (no OpenFOAM needed)."""
+import shutil
 import sys
 import tempfile
 import unittest
@@ -12,6 +13,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import active_learning as al  # noqa: E402
 import cabinet_mesh_study as ms  # noqa: E402
 import inlet_turbulence_study as its  # noqa: E402
+import radiation_study as rs  # noqa: E402
 import linear_upwind_study as lu  # noqa: E402
 import transient_sensitivity as tsens  # noqa: E402
 
@@ -135,6 +137,52 @@ class TestInletTurbulence(unittest.TestCase):
             (d / "0" / "omega").write_text("internalField uniform 4;\n")
             with self.assertRaises(RuntimeError):
                 its.set_inlet(d, 10.0)
+
+
+class TestRadiation(unittest.TestCase):
+    def make_case(self, tmp):
+        # a copy of the real template with the heat flux placeholders filled in, as run_sweep.prepare() does
+        template = ROOT / "cabinet_case"
+        (tmp / "0").mkdir()
+        for f in (template / "0.orig").iterdir():
+            text = f.read_text()
+            for k, v in {"@UIN@": "1", "@Q1@": "100", "@Q2@": "60", "@Q3@": "30"}.items():
+                text = text.replace(k, v)
+            (tmp / "0" / f.name).write_text(text)
+        shutil.copytree(template / "system", tmp / "system")
+        (tmp / "constant").mkdir()
+
+    def test_files_and_qr_are_added(self):
+        with tempfile.TemporaryDirectory() as t:
+            d = Path(t)
+            self.make_case(d)
+            rs.add_radiation(d, 0.9)
+            for name in ("radiationProperties", "boundaryRadiationProperties"):
+                self.assertTrue((d / "constant" / name).exists())
+            self.assertTrue((d / "0" / "G").exists() and (d / "0" / "IDefault").exists())
+            # three components + the shell now read qr, and the shell is still adiabatic (q = 0)
+            T = (d / "0" / "T").read_text()
+            self.assertEqual(T.count("qr              qr;"), 4)
+            self.assertNotIn("zeroGradient", T)
+            self.assertIn("emissivity      0.9;", (d / "constant" / "boundaryRadiationProperties").read_text())
+            self.assertIn("Ii", (d / "system" / "fvSolution").read_text())
+            self.assertIn("div(Ji,Ii_h)", (d / "system" / "fvSchemes").read_text())
+
+    def test_wrong_template_fails(self):
+        with tempfile.TemporaryDirectory() as t:
+            d = Path(t)
+            self.make_case(d)
+            (d / "0" / "T").write_text("walls { type zeroGradient; }\n")
+            with self.assertRaises(RuntimeError):
+                rs.add_radiation(d, 0.9)
+
+    def test_face_area_of_a_unit_square(self):
+        with tempfile.TemporaryDirectory() as t:
+            d = Path(t)
+            (d / "points").write_text("4\n(\n(0 0 0)\n(1 0 0)\n(1 1 0)\n(0 1 0)\n)\n")
+            (d / "faces").write_text("1\n(\n4(0 1 2 3)\n)\n")
+            (d / "boundary").write_text("1\n(\n    top\n    {\n        type patch;\n        nFaces 1;\n        startFace 0;\n    }\n)\n")
+            self.assertAlmostEqual(float(rs.face_areas(d, "top").sum()), 1.0)
 
 
 if __name__ == "__main__":
