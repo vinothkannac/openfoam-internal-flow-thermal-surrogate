@@ -2,6 +2,12 @@
 
 What I changed after the first complete version. All numbers come from `results/`.
 
+## 2026-11-24 (inlet turbulence)
+- **Inlet-turbulence sensitivity** (`scripts/inlet_turbulence_study.py`): 3 converged cases re-run with the inlet k multiplied by 0.1, 1, 10 and 100 (omega scaled with sqrt(k), so only the intensity changes). The k x1 control reproduces the sweep exactly. Up to k x10 (5 to 16 % intensity) T_max moves by less than 1 K and dp by at most 5.5 %; at k x100 (26 to 52 %) T_max moves by 1.4 to 7.2 K.
+- Added the study to `./run_all.sh studies`, a test for `set_inlet` in `tests/test_studies.py`, and `results/inlet_turbulence_study.csv`.
+- Updated the README: new Part 2 section, a row in Results at a glance, and revised Turbulence, Simplified-physics rows.
+- Roadmap item 10: inlet-turbulence part done; 3D slice, conjugate heat transfer and radiation are still open.
+
 ## 2026-11-18 (Tier 2 studies)
 - **Cabinet mesh study** (`scripts/cabinet_mesh_study.py`): 4 cases on 10k, 23k and 46k cells. T_max rise is 10 to 14 % higher on the fine mesh, apparent order 0.6 to 1.1, GCI 30 to 48 %: the cabinet temperatures are not mesh-converged. Pressure drop changes 4 to 7 %.
 - **`linearUpwind` restart** (`scripts/linear_upwind_study.py`): +10 to +72 K in T_max on four converged cases while an `upwind` control moved by 0.1 K, and the second-order flow does not settle. The steady upwind results are biased low.
