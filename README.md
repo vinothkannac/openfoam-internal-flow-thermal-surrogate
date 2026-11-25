@@ -30,6 +30,7 @@ It carries over the workflow of my Master's thesis (parametrised CFD cases, corr
 | **Radiation** | Adding surface radiation (`fvDOM`, transparent air) lowers T_max by 5 to 64 K on three cases (emissivity 0.9 and 0.3); the components radiate 10 to 31 % of their power to the shell and the openings. The sweep without radiation is biased high. |
 | **3D slice** | Same cross-section with 12 cells through the depth and no-slip side panels (272k cells): pressure drop is 16 to 20 % higher in all three cases; T_max changes by +8.9 K and −0.4 K in the two converged cases, and the third case (low velocity) stays unsteady in 3D. |
 | **Conjugate heat transfer** | Components meshed as solids with a volumetric heat source (conductivity 200 and 5 W/(m K)): T_max is 12 to 74 K lower than in the sweep, but the mean surface temperature changes by only 0.4 to 2.6 K. The sweep's T_max is a hot-spot value of a prescribed flux. |
+| **Transient-aware surrogate** | Tried on 28 cases (8 unsteady, all run transient). Error on the unsteady cases falls from 16.4 to 8.4 K, but over all cases it is not better (7.1 vs 6.5 K) because the regime classifier fails (64 %, below the 71 % of always answering "steady"). The offset and fluctuation models alone beat their baselines. |
 | **Surrogate** | Trained on the 16 converged cases only. Leave-one-out R² = 0.998 (temperature rise) and 0.995 (pressure drop). About 10⁶ times faster than one CFD run. |
 
 The honest caveats are in [Limitations](#limitations); please read them before using any number.
@@ -40,7 +41,7 @@ The honest caveats are in [Limitations](#limitations); please read them before u
 - [Repository layout](#repository-layout)
 - [Part 1: validation on the heated cavity](#part-1-validation-on-the-heated-cavity)
 - [Part 2: the cabinet and its parameter sweep](#part-2-the-cabinet-and-its-parameter-sweep)
-- [Mesh study, second-order scheme, transient sensitivity, active learning, inlet turbulence, radiation, 3D slice, conjugate heat transfer](#mesh-study-for-the-cabinet) (in Part 2)
+- [Mesh study, second-order scheme, transient sensitivity, active learning, inlet turbulence, radiation, 3D slice, conjugate heat transfer, transient-aware surrogate](#mesh-study-for-the-cabinet) (in Part 2)
 - [Part 3: the surrogate model](#part-3-the-surrogate-model)
 - [Decisions and what I changed](#decisions-and-what-i-changed)
 - [Assumptions and simplifications](#assumptions-and-simplifications)
@@ -85,6 +86,8 @@ scripts/
   linear_upwind_study.py  restart converged cases with linearUpwind (+ upwind control)
   transient_sensitivity.py time step / run length sensitivity of one transient case
   active_learning.py      GP-uncertainty-driven choice of new CFD cases
+  transient_active.py     transient runs of the four unsteady active-learning proposals
+  transient_surrogate.py  regime classifier + offset models for the unsteady cases, leave-one-out with baselines
   inlet_turbulence_study.py inlet k x0.1 to x100 on 3 converged cases (T_max, dp vs sweep)
   radiation_study.py      fvDOM surface radiation on 3 cases x 2 emissivities + radiative heat balance
   slice3d_study.py        3D slice (12 cells through the depth, side panels as walls), 3 cases on 6 cores
@@ -211,7 +214,7 @@ What this shows:
 
 - **The flow really is unsteady.** T_max fluctuates with a standard deviation of 1.8 to 8.4 K, and the fluctuation grows with heat load and velocity in this set. A steady solver has no fixed point to reach, which explains the stalled residuals.
 - **The steady values were not just noisy, they were biased low.** The transient mean T_max is 8 to 47 K higher than the last steady iterate, and the mean pressure drop is 0.03 to 0.09 Pa lower. The steady numbers for these four cases in `results/sweep_results.csv` should therefore not be used.
-- **The averages are stationary** (the mean changes by 0.01 to 0.11 K between the last two quarters of the averaging window), so the transient means are well-defined values. I have **not** used them for the surrogate. Sensitivity to the time step and the 100 s length was tested for one case only (see [Transient sensitivity](#transient-sensitivity-one-case)); the convection scheme was not varied (the transient runs use `linearUpwind` for U and `limitedLinear` for h, not the `upwind` of the steady sweep, so the two sets are not like-for-like).
+- **The averages are stationary** (the mean changes by 0.01 to 0.11 K between the last two quarters of the averaging window), so the transient means are well-defined values. The project surrogate in Part 3 does **not** use them; I tried them in a separate model (see [Transient-aware surrogate](#transient-aware-surrogate)). Sensitivity to the time step and the 100 s length was tested for one case only (see [Transient sensitivity](#transient-sensitivity-one-case)); the convection scheme was not varied (the transient runs use `linearUpwind` for U and `limitedLinear` for h, not the `upwind` of the steady sweep, so the two sets are not like-for-like).
 
 ![Transient cabinet flow](docs/img/transient_cabinet.gif)
 
@@ -306,6 +309,50 @@ What this shows:
 - **The surrogate was already good where steady answers exist.** The T_max rise errors on the first three accepted cases (0.2 to 1.9 K) are inside or near the GP's own 95 % half-width. The worst is `u0.25_q600` (5.3 K GP, 7.2 K MLP, about twice the GP half-width): the corner of lowest velocity and highest load, next to the unsteady region. The pressure drop of `u0.2_q325` was under-predicted by 0.06 to 0.075 Pa (17 to 20 %).
 - **Leave-one-out score of the whole set after each accepted case** (GP, T_max rise MAE): 2.16 K (16 cases), 2.29 K (+1), 1.57 K (+2), 1.65 K (+3), 1.79 K (+4); MLP: 1.52, 1.36, 1.89, 1.47, 2.67 K. So the error did not fall with the added points; the new points sit in harder territory than the original grid. With four points I cannot claim a trend either way.
 - This was one run of one selection rule; I did not run a random-selection baseline, so I cannot say that the GP's choice was better than random. I did **not** retrain the project surrogate on these 4 cases, and the sweep CSV is unchanged.
+
+### Transient-aware surrogate
+
+The project surrogate (Part 3) is trained on converged cases only, so it says nothing useful about the unsteady region. I tried to cover that region with `scripts/transient_surrogate.py`.
+
+**More transient data first.** Four unsteady cases are very few, so `scripts/transient_active.py` also ran the four unsteady active-learning proposals transient. It rebuilds their steady start state and then uses the same settings as `run_transient.py` (maxCo 0.8, 100 s, statistics over the second half). All four reached 100 s; each transient run took 67 to 93 minutes with four running in parallel on 6 cores.
+
+| Case | T_max steady (K) | T_max transient: mean (K) | std (K) | Mean drift between the last two quarters (K) | dp steady (Pa) | dp transient mean (Pa) |
+|---|---|---|---|---|---|---|
+| `u0.225_q150` | 342.2 | 352.6 | 2.7 | 0.02 | 0.187 | 0.141 |
+| `u0.2_q275` | 383.7 | 396.7 | 4.8 | 0.07 | 0.293 | 0.241 |
+| `u0.325_q550` | 432.0 | 471.3 | 7.9 | 0.33 | 0.422 | 0.336 |
+| `u0.35_q500` | 421.2 | 455.7 | 7.6 | 0.08 | 0.369 | 0.304 |
+
+They behave like the first four: over all 8 unsteady cases the transient mean is 8 to 47 K above the steady value. The drift of `u0.325_q550` (0.33 K) is larger than in the other seven.
+
+**The model** has two inputs (`u_in`, `q_ref`) and three parts, trained on 28 cases (20 converged, 8 unsteady):
+
+1. a logistic regression for the regime, P(unsteady), where "unsteady" means that the steady solver did not converge;
+2. the same small neural network as in Part 3, trained on the 20 converged cases, for the steady value;
+3. two ridge-linear models on the 8 unsteady cases (inputs as logarithms): the offset (transient mean minus steady value) and the standard deviation of T_max.
+
+The expected T_max is `T_steady + P(unsteady) × offset`. I score it by leave-one-out. The target is the transient mean for an unsteady case and the steady CFD value for a converged one. "Steady-only" is part 2 alone.
+
+| T_max mean absolute error (K) | Steady-only | Transient-aware |
+|---|---|---|
+| 8 unsteady cases | 16.4 | **8.4** |
+| 20 converged cases | **2.6** | 6.5 |
+| All 28 cases | **6.5** | 7.1 |
+
+**As a whole it is not an improvement.** It halves the error on the unsteady cases, but it makes the converged cases much worse, and over all 28 cases it is slightly worse than ignoring the unsteadiness. To find the weak part I scored each one against a simple baseline:
+
+| Part (leave-one-out) | My model | Simple baseline |
+|---|---|---|
+| Regime accuracy (28 cases) | 64 % | 71 % (always answer "steady") |
+| Offset error, 8 unsteady cases | **4.6 K** | 15.7 K (mean offset of the other cases) |
+| Standard deviation error, 8 unsteady cases | **0.5 K** | 2.6 K (mean of the other cases) |
+
+- **The regime classifier fails.** It finds 2 of the 8 unsteady cases and raises 4 false alarms among the 20 converged ones, so it is worse than always answering "steady". The worst false alarm, `u0.25_q600`, ends up 25 K off, against 6 K for steady-only. In my data the unsteady cases are mixed in with converged ones (`u0.2_q275` is unsteady, `u0.2_q325` and `u0.2_q400` converged), and a straight boundary in two inputs cannot separate them. Some of these "converged" cases needed the lower-relaxation continuation, so the label may depend on my solver settings as much as on the physics. I did not test that.
+- **The two ridge models beat their baselines clearly.** The offset error of 4.6 K assumes that the steady CFD value of the case is available, so it is a correction for a finished steady run, not a prediction without CFD. Without that run, but knowing that the case is unsteady, the error is 8.3 K.
+- **The combined standard deviation is weaker than the ridge model alone** (3.5 K instead of 0.5 K), because I multiply it by the unreliable probability.
+- I did **not** tune the classifier or try other ones. With 28 points, choosing a model by the same leave-one-out score I report would make that score look better than it is. So the project surrogate stays as it was.
+
+**Limits of this test:** 8 unsteady points for two inputs; the offset mixes the unsteadiness with the scheme change (the transient runs use `linearUpwind` for U and `limitedLinear` for h, the steady runs `upwind`); the [second-order restart](#second-order-scheme-linearupwind) shows that `linearUpwind` also raises T_max in converged cases, so the converged targets here are probably biased low compared with the unsteady ones; and pressure drop is not corrected (the transient mean is 0.03 to 0.09 Pa below the steady value). Data: `results/transient_active_results.csv`, `results/transient_surrogate_loo.csv`, `results/transient_surrogate.json`.
 
 ## Part 3: the surrogate model
 
@@ -502,10 +549,10 @@ Everything below is a modelling choice I made, not a measured fact. The effect c
 |---|---|---|
 | **2D section of a 3D problem.** Absolute temperatures and pressure drops are not representative of a real cabinet. I tested a 3D slice on three cases (see Part 2): pressure drop 16 to 20 % higher, T_max +8.9 and −0.4 K in the two converged cases, the third case unsteady. | Computing budget: the 3D slice needed 272k cells and about an hour per case on 6 cores, against 6 minutes for 2D on 2 cores. | Run the whole sweep in 3D, vary the depth, and add a mesh study for the 3D mesh. |
 | **Cabinet not mesh-converged.** A three-mesh study of 4 cases gives T_max rises 10 to 14 % higher on the fine mesh, apparent order below 1, GCI 30 to 48 %. | Computing budget: the sweep was run on one mesh. | Test wall treatment and prism layers, use an integral quantity, and refine further. |
-| **Four of the 20 cabinet cases are unsteady** and cannot be converged with a steady solver. Their steady values are biased low (see the transient table). The surrogate is trained without them, which leaves 16 points. | Physics of the problem, not a budget issue. I resolved it with a transient solver, which is the expensive part. | Longer transient runs and a transient sweep, so the unsteady region is part of the surrogate. |
+| **Four of the 20 cabinet cases are unsteady** and cannot be converged with a steady solver. Their steady values are biased low (see the transient table). The surrogate is trained without them, which leaves 16 points. | Physics of the problem, not a budget issue. I resolved it with a transient solver, which is the expensive part. | Longer transient runs and a transient sweep. A first transient-aware surrogate on 8 unsteady cases did not beat the steady one overall (see Part 2). |
 | **Transient sensitivity tested on one case only** (`u0.2_q100`: insensitive to time step and run length). The convection scheme and the mesh were not varied, and the transient runs use different schemes from the steady sweep. | Computing budget: each run takes 40 to 110 minutes. | Repeat for the 8 K-std cases and with the mesh study's fine mesh. |
 | **First-order `upwind` in the steady sweep.** Restarting four converged cases with `linearUpwind` raised T_max by 10 to 72 K and the solution stopped being steady, while an `upwind` control moved by 0.1 K. | I switched to `upwind` for robustness, together with lower relaxation. The restart test separates the two: the scheme explains the change. | Time-average second-order runs (transient) for the whole sweep. |
-| **Surrogate trained on 16 points of a 2-parameter space:** valid only inside the sampled range, and the hold-out score rests on 4 cases. | Each training point is one CFD run, so the number of points is limited by the same budget. | Active learning (above) added 4 converged cases but half of its proposals were unsteady; a model that also covers the transient cases is the next step. |
+| **Surrogate trained on 16 points of a 2-parameter space:** valid only inside the sampled range, and the hold-out score rests on 4 cases. | Each training point is one CFD run, so the number of points is limited by the same budget. | Active learning added 4 converged cases but half of its proposals were unsteady. The transient-aware surrogate needs a better way to predict which cases are unsteady: more cases near the boundary, run with the same scheme on both sides. |
 | **Simplified physics:** prescribed heat flux in the sweep (no solid conduction), adiabatic shell, no radiation in the sweep, constant air properties, fully turbulent model (see the table above). | Scope: each addition (conjugate heat transfer, radiation, variable properties) is a larger model that I did not build. | Re-run the whole sweep with conducting components and radiation. (Inlet turbulence, radiation, a 3D slice and conjugate heat transfer are now tested on three cases each, see Part 2; the whole sweep is not re-run with them.) |
 | **Wall functions without prism layers:** I checked y⁺ on 4 of the 20 cases and got 0.02 to 9.9, below the log-law range of 30 to 300 (see Assumptions). | The mesh is sized for the small gaps around the components, which puts the first cell in the sublayer. | Compare T_max on a mesh with a coarser first cell (y⁺ of 30 or more) and on one with prism layers, and check the other 16 cases. |
 | **Convergence criteria:** the hot/cold heat balance (cavity) and the T_max change between write times (cabinet) are the only criteria I applied beyond the residuals. | I wanted a test I can state in one sentence. | The case template now logs T_max and dp every iteration. Next I want to re-run the 4 borderline cases with it and use the spread over the last 500 iterations as a second criterion. |

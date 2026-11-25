@@ -2,6 +2,12 @@
 
 What I changed after the first complete version. All numbers come from `results/`.
 
+## 2026-11-24 (transient-aware surrogate)
+- **More transient data** (`scripts/transient_active.py`): the four unsteady active-learning proposals run transient (100 s, same settings as the first four), 67 to 93 minutes each, four in parallel on 6 cores. Over all 8 unsteady cases the transient mean T_max is 8 to 47 K above the steady value.
+- **Transient-aware surrogate** (`scripts/transient_surrogate.py`): regime classifier, steady network and ridge models for the offset and the fluctuation, leave-one-out on 28 cases. **Mostly a negative result:** the T_max error on unsteady cases falls from 16.4 to 8.4 K, but on converged cases it rises from 2.6 to 6.5 K, and over all cases it is slightly worse (7.1 vs 6.5 K). The regime classifier is the weak part: 64 % accuracy, below the 71 % of always answering "steady". The offset (4.6 vs 15.7 K) and standard deviation (0.5 vs 2.6 K) models beat their baselines. I did not tune the classifier, and the project surrogate is unchanged.
+- Added both scripts to `./run_all.sh studies`, 6 tests in `tests/test_studies.py`, and `results/transient_active_results.csv`, `transient_surrogate_loo.csv`, `transient_surrogate.json`.
+- Updated the README: new Part 2 section, a row in Results at a glance, and two Limitations rows.
+
 ## 2026-11-24 (conjugate heat transfer)
 - **Conjugate heat transfer** (`scripts/cht_study.py`): the three components meshed as solid blocks with a uniform heat source of the same total power as the sweep, coupled to the air with `chtMultiRegionSimpleFoam`; 3 cases x 2 assumed conductivities (200 and 5 W/(m K)), 6 runs, all converged. T_max is 12 to 74 K lower than in the sweep, but the mean surface temperature is only 0.4 to 2.6 K lower: the sweep's T_max is a hot-spot value of a prescribed flux. Pressure drop changes by 0.2 to 2.8 %. Assumptions are listed in the README.
 - **Corrected mistake:** with the tutorial setting `useImplicit true` the coupling lost about 14 % of the heat (86 % of the power reached the air). I found it with an enthalpy-flux balance, switched to `useImplicit false` (balance within 0.4 % and 2.2 %, like the sweep), and discarded and re-ran my first results. I did not find why the implicit form loses heat.
