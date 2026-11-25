@@ -1,0 +1,27 @@
+{
+  "n_cases": 28,
+  "n_unsteady_with_transient_run": 8,
+  "regime_loo_accuracy": 0.6428571428571429,
+  "regime_majority_baseline_accuracy": 0.7142857142857143,
+  "regime_unsteady_found": 2,
+  "regime_false_alarms": 4,
+  "regime_base_rate_unsteady": 0.2857142857142857,
+  "MAE_all_steady_only_K": 6.528086996388812,
+  "MAE_all_aware_K": 7.072548128701022,
+  "MAE_unsteady_steady_only_K": 16.434548574983417,
+  "MAE_unsteady_aware_K": 8.403869321946864,
+  "MAE_steady_steady_only_K": 2.5655023649509703,
+  "MAE_steady_aware_K": 6.540019651402685,
+  "std_MAE_unsteady_K": 3.539357174827858,
+  "std_truth_mean_unsteady_K": 5.3576306200514345,
+  "offset_mean_K": 24.53893471324063,
+  "offset_min_K": 8.0361732421419,
+  "offset_max_K": 46.68651735029039,
+  "parts_unsteady_loo": {
+    "offset_ridge_MAE_K": 4.627297718133725,
+    "offset_mean_MAE_K": 15.699659413694341,
+    "std_ridge_MAE_K": 0.5269323458653081,
+    "std_mean_MAE_K": 2.604443431028784,
+    "known_regime_MAE_K": 8.312591676480743
+  }
+}
