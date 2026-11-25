@@ -20,6 +20,8 @@ import slice3d_study as s3  # noqa: E402
 import cht_study as cht  # noqa: E402
 import linear_upwind_study as lu  # noqa: E402
 import transient_sensitivity as tsens  # noqa: E402
+import transient_active as tact  # noqa: E402
+import transient_surrogate as tsur  # noqa: E402
 
 SCHEMES = """divSchemes
 {
@@ -293,6 +295,46 @@ class TestCHT(unittest.TestCase):
         with tempfile.TemporaryDirectory() as t:
             names, _ = mcm.build(str(Path(t) / "c.msh"), scale=3.0, solids=True)
         self.assertEqual(names, ["back", "front", "inlet", "outlet", "walls"])
+
+
+class TestTransientSurrogate(unittest.TestCase):
+    """These tests read the result CSVs that are part of the repo."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.df = tsur.load_cases()
+        cls.model = tsur.TransientSurrogate().fit(cls.df)
+
+    def test_every_unsteady_case_has_a_transient_run(self):
+        un = self.df[self.df["unsteady"]]
+        self.assertEqual((len(self.df), len(un)), (28, 8))
+        self.assertTrue(un["offset_K"].notna().all())
+        self.assertTrue(self.df[~self.df["unsteady"]]["offset_K"].isna().all())
+
+    def test_offset_is_transient_mean_minus_steady_value(self):
+        r = self.df.set_index("case").loc["u0.35_q600"]
+        self.assertAlmostEqual(r["offset_K"], r["T_max_mean_K"] - r["T_max_K"])
+
+    def test_expected_value_is_weighted_by_the_probability(self):
+        p = self.model.predict(0.3, 300)
+        offset = p["T_unsteady_mean_K"] - p["T_steady_K"]
+        self.assertAlmostEqual(p["T_expected_K"], p["T_steady_K"] + p["p_unsteady"] * offset)
+        self.assertGreaterEqual(p["T_osc_std_K"], 0.0)
+
+    def test_out_of_range_flag(self):
+        self.assertTrue(self.model.predict(0.5, 300)["in_range"])
+        self.assertFalse(self.model.predict(1.5, 300)["in_range"])
+        self.assertFalse(self.model.predict(0.5, 700)["in_range"])
+
+    def test_part_scores_report_model_and_baseline(self):
+        s = tsur.part_scores(self.df)
+        self.assertEqual(sorted(s), sorted(k + "_MAE_K" for k in
+                         ("offset_ridge", "offset_mean", "std_ridge", "std_mean", "known_regime")))
+        self.assertTrue(all(v >= 0 for v in s.values()))
+
+    def test_the_four_unsteady_proposals_are_selected(self):
+        self.assertEqual(sorted(tact.unsteady_cases()["case"]),
+                         ["u0.225_q150", "u0.2_q275", "u0.325_q550", "u0.35_q500"])
 
 
 if __name__ == "__main__":
